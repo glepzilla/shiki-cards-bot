@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <meta name="theme-color" content="#0c0a14" />
   <title>Shiki Cards</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
@@ -44,7 +44,10 @@
       z-index: 50;
     }
 
-    .wrap { padding: 16px 16px 28px; max-width: 560px; margin: 0 auto; }
+    .wrap {
+      padding: 16px 16px calc(28px + env(safe-area-inset-bottom));
+      max-width: 560px; margin: 0 auto;
+    }
 
     /* ---------- header ---------- */
     header { display: flex; align-items: baseline; gap: 10px; margin: 2px 2px 14px; animation: rise 0.5s both; }
@@ -67,7 +70,7 @@
 
     /* ---------- search ---------- */
     .search { position: relative; animation: rise 0.5s 0.06s both; }
-    .search svg {
+    .search .icon {
       position: absolute; left: 16px; top: 50%; translate: 0 -50%;
       width: 18px; height: 18px; color: var(--faint); pointer-events: none;
     }
@@ -75,7 +78,7 @@
       width: 100%;
       border: 1px solid var(--line);
       border-radius: 16px;
-      padding: 15px 16px 15px 46px;
+      padding: 15px 44px 15px 46px;
       background: var(--raise);
       color: var(--text);
       font: 500 16px "Golos Text", sans-serif;
@@ -84,6 +87,30 @@
     }
     .search input::placeholder { color: var(--faint); }
     .search input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+    .clear {
+      position: absolute; right: 10px; top: 50%; translate: 0 -50%;
+      width: 28px; height: 28px;
+      border: none; border-radius: 50%;
+      background: var(--raise-2); color: var(--muted);
+      font-size: 14px; line-height: 1;
+      cursor: pointer;
+      display: none;
+      align-items: center; justify-content: center;
+      transition: transform 0.12s;
+    }
+    .clear.show { display: inline-flex; }
+    .clear:active { transform: translateY(0) scale(0.9); }
+
+    /* ---------- chips (history) ---------- */
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chip {
+      border: 1px solid var(--line); border-radius: 999px;
+      background: var(--raise); color: var(--muted);
+      font: 500 13px "Golos Text", sans-serif;
+      padding: 8px 14px; cursor: pointer;
+      transition: border-color 0.2s, color 0.2s, transform 0.12s;
+    }
+    .chip:active { transform: scale(0.95); border-color: var(--accent); color: var(--text); }
 
     /* ---------- results ---------- */
     .list { display: grid; gap: 10px; margin-top: 14px; }
@@ -108,6 +135,7 @@
     .row .t { font-weight: 700; font-size: 15px; line-height: 1.25; margin-bottom: 3px; }
     .row .m { color: var(--muted); font-size: 12.5px; line-height: 1.4; }
     .row .m .star { color: var(--amber); }
+    .row .m .st { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin: 0 5px 1px 0; }
     .row .g { color: var(--faint); font-size: 11.5px; margin-top: 2px; }
 
     .state {
@@ -125,6 +153,16 @@
       margin-bottom: 10px;
       letter-spacing: 0.04em;
     }
+    .retry {
+      display: block;
+      margin: 16px auto 0;
+      border: 1px solid var(--accent); border-radius: 999px;
+      background: var(--accent-soft); color: var(--text);
+      font: 600 13px "Golos Text", sans-serif;
+      padding: 9px 18px; cursor: pointer;
+      transition: transform 0.12s;
+    }
+    .retry:active { transform: scale(0.95); }
 
     .skel {
       height: 100px; border-radius: 16px; border: 1px solid var(--line);
@@ -146,7 +184,10 @@
       transition: opacity 0.25s, transform 0.25s;
     }
     .preview.open { opacity: 1; transform: none; pointer-events: auto; }
-    .preview .inner { padding: 14px 16px 30px; max-width: 560px; margin: 0 auto; }
+    .preview .inner {
+      padding: 14px 16px calc(30px + env(safe-area-inset-bottom));
+      max-width: 560px; margin: 0 auto;
+    }
 
     .back {
       display: inline-flex; align-items: center; gap: 7px;
@@ -167,6 +208,7 @@
       box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55), 0 4px 16px rgba(0, 0, 0, 0.4);
       animation: pop 0.35s both;
       background: var(--raise);
+      cursor: zoom-in;
     }
     .stage canvas { display: block; width: 100%; height: auto; }
     .stage .veil {
@@ -178,6 +220,24 @@
       opacity: 0; pointer-events: none; transition: opacity 0.2s;
     }
     .stage .veil.on { opacity: 1; }
+
+    .zoom {
+      position: fixed; inset: 0;
+      z-index: 70;
+      background: rgba(6, 5, 10, 0.92);
+      backdrop-filter: blur(6px);
+      display: grid; place-items: center;
+      padding: 18px;
+      opacity: 0; pointer-events: none;
+      transition: opacity 0.2s;
+      cursor: zoom-out;
+    }
+    .zoom.open { opacity: 1; pointer-events: auto; }
+    .zoom img {
+      max-width: 100%; max-height: 100%;
+      border-radius: 14px;
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.7);
+    }
 
     .label {
       font-family: Unbounded, sans-serif;
@@ -196,6 +256,7 @@
     }
     .posters::-webkit-scrollbar { display: none; }
     .thumb {
+      position: relative;
       flex: 0 0 auto;
       width: 56px; height: 80px;
       border: 2px solid var(--line);
@@ -207,6 +268,16 @@
       transition: border-color 0.2s, box-shadow 0.2s, transform 0.12s;
     }
     .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .thumb .src {
+      position: absolute; left: 0; right: 0; bottom: 0;
+      font: 700 8px Unbounded, sans-serif;
+      letter-spacing: 0.08em;
+      text-align: center;
+      color: rgba(255, 255, 255, 0.85);
+      background: rgba(8, 6, 14, 0.72);
+      padding: 2px 0 3px;
+      pointer-events: none;
+    }
     .thumb:active { transform: scale(0.94); }
     .thumb.active { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
     .thumb.skel-t {
@@ -218,7 +289,7 @@
 
     .presets {
       display: flex; gap: 8px;
-      margin: 0 0 16px;
+      margin: 0 0 4px;
       overflow-x: auto;
       scrollbar-width: none;
       padding-bottom: 2px;
@@ -236,6 +307,7 @@
     .pill .sw { width: 12px; height: 12px; border-radius: 4px; }
     .pill.active { border-color: var(--accent); color: var(--text); background: var(--accent-soft); }
 
+    .actions { display: grid; gap: 10px; margin-top: 16px; }
     .share {
       width: 100%;
       border: none; border-radius: 16px;
@@ -251,17 +323,27 @@
     }
     .share:active { transform: scale(0.98); }
     .share:disabled { opacity: 0.55; cursor: default; }
+    .ghost {
+      width: 100%;
+      border: 1px solid var(--line); border-radius: 16px;
+      padding: 14px;
+      background: var(--raise); color: var(--muted);
+      font: 600 13px "Golos Text", sans-serif;
+      cursor: pointer;
+      transition: transform 0.12s, border-color 0.2s, color 0.2s;
+    }
+    .ghost:active { transform: scale(0.98); border-color: var(--accent); color: var(--text); }
     .hint { color: var(--faint); font-size: 12px; text-align: center; margin-top: 10px; }
 
     .toast {
-      position: fixed; left: 50%; bottom: 24px; translate: -50% 0;
+      position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); translate: -50% 0;
       background: var(--raise-2); border: 1px solid var(--line);
       color: var(--text); font-size: 13px;
       border-radius: 999px; padding: 10px 18px;
       opacity: 0; pointer-events: none;
       transition: opacity 0.25s, transform 0.25s;
       transform: translateY(8px);
-      z-index: 60;
+      z-index: 80;
       max-width: 88vw; text-align: center;
     }
     .toast.show { opacity: 1; transform: none; }
@@ -270,6 +352,14 @@
     @keyframes pop { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
     @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -40% 0; } }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
   </style>
 </head>
 <body>
@@ -277,14 +367,15 @@
     <header>
       <span class="mark">Shiki<em>·</em>Cards</span>
       <span class="dot"></span>
-      <span class="tag">карточки аниме</span>
+      <span class="tag" id="tagline"></span>
     </header>
 
     <div class="search">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
         <circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.2-3.2"></path>
       </svg>
-      <input id="search" placeholder="Название аниме…" autocomplete="off" autofocus />
+      <input id="search" autocomplete="off" autofocus />
+      <button class="clear" id="clearBtn" aria-label="clear">✕</button>
     </div>
 
     <div class="list" id="results"></div>
@@ -294,59 +385,168 @@
     <div class="inner">
       <button class="back" id="backBtn">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-        Назад к поиску
+        <span id="backLabel"></span>
       </button>
-      <div class="stage">
+      <div class="stage" id="stage">
         <canvas id="canvas" width="720" height="1080"></canvas>
-        <div class="veil" id="veil">Рендерю…</div>
+        <div class="veil" id="veil"></div>
       </div>
       <div id="postersSection" hidden>
-        <div class="label">Постер</div>
+        <div class="label" id="posterLabel"></div>
         <div class="posters" id="posters"></div>
       </div>
-      <div class="label">Стиль</div>
+      <div id="titleSection" hidden>
+        <div class="label" id="titleLabel"></div>
+        <div class="presets" id="titlePills"></div>
+      </div>
+      <div class="label" id="styleLabel"></div>
       <div class="presets" id="presets"></div>
-      <button class="share" id="shareBtn">Отправить карточку</button>
-      <div class="hint">Карточка рендерится на устройстве и улетает в инлайн-режим</div>
+      <div class="label" id="elementsLabel"></div>
+      <div class="presets" id="toggles"></div>
+      <div class="actions" id="actions">
+        <button class="share" id="shareBtn"></button>
+        <button class="ghost" id="downloadBtn" hidden></button>
+      </div>
+      <div class="hint" id="hint"></div>
     </div>
   </div>
 
+  <div class="zoom" id="zoom"><img id="zoomImg" alt="" /></div>
   <div class="toast" id="toast"></div>
 
   <script>
     const tg = window.Telegram?.WebApp;
+    const inTelegram = !!(tg && tg.initData);
     tg?.ready();
     tg?.expand();
     tg?.setHeaderColor?.('#0c0a14');
     tg?.setBackgroundColor?.('#0c0a14');
+    tg?.disableVerticalSwipes?.();
+
+    /* ---------- i18n ---------- */
+    const langCode = (tg?.initDataUnsafe?.user?.language_code || navigator.language || 'ru').toLowerCase();
+    const RU = langCode.startsWith('ru');
+    const T = RU ? {
+      tagline: 'карточки аниме',
+      placeholder: 'Название аниме…',
+      idle: 'Введи название аниме — хотя бы две буквы',
+      recent: 'Недавнее',
+      trending: 'Сейчас смотрят',
+      notFound: 'Ничего не нашлось. Попробуй другое название',
+      searchError: 'Поиск сломался',
+      retry: 'Повторить',
+      back: 'Назад к поиску',
+      poster: 'Постер',
+      titleSec: 'Название',
+      titleRu: 'Русское',
+      titleOrig: 'Оригинал',
+      style: 'Стиль',
+      elements: 'Элементы',
+      elScore: 'Оценка',
+      elGenres: 'Жанры',
+      elMark: 'Подпись',
+      share: 'Отправить карточку',
+      uploading: 'Загружаю…',
+      rendering: 'Рендерю…',
+      download: 'Скачать JPEG',
+      hintTg: 'Карточка рендерится на устройстве и улетает в инлайн-режим',
+      hintWeb: 'Открой через Telegram, чтобы делиться карточкой в чатах',
+      posterFail: 'Не удалось загрузить постер',
+      sendFail: 'Не получилось отправить, попробуй ещё раз',
+      copied: 'Скопировано: ',
+      eps: 'эп.',
+      stOngoing: 'онгоинг',
+      stAnons: 'анонс',
+      presets: { classic: 'Классика', rose: 'Роза', polaroid: 'Полароид', noir: 'Нуар' },
+    } : {
+      tagline: 'anime cards',
+      placeholder: 'Anime title…',
+      idle: 'Type an anime title — at least two letters',
+      recent: 'Recent',
+      trending: 'Airing now',
+      notFound: 'Nothing found. Try another title',
+      searchError: 'Search broke',
+      retry: 'Retry',
+      back: 'Back to search',
+      poster: 'Poster',
+      titleSec: 'Title',
+      titleRu: 'Russian',
+      titleOrig: 'Original',
+      style: 'Style',
+      elements: 'Elements',
+      elScore: 'Score',
+      elGenres: 'Genres',
+      elMark: 'Watermark',
+      share: 'Share the card',
+      uploading: 'Uploading…',
+      rendering: 'Rendering…',
+      download: 'Download JPEG',
+      hintTg: 'The card is rendered on-device and goes to inline mode',
+      hintWeb: 'Open via Telegram to share the card in chats',
+      posterFail: 'Could not load the poster',
+      sendFail: 'Could not send, try again',
+      copied: 'Copied: ',
+      eps: 'ep.',
+      stOngoing: 'airing',
+      stAnons: 'soon',
+      presets: { classic: 'Classic', rose: 'Rose', polaroid: 'Polaroid', noir: 'Noir' },
+    };
 
     const PRESETS = [
-      { id: 'classic',  name: 'Классика', sw: 'linear-gradient(135deg,#0c0a14,#3a3550)' },
-      { id: 'rose',     name: 'Роза',     sw: 'linear-gradient(135deg,#ff5c7a,#7a1430)' },
-      { id: 'polaroid', name: 'Полароид', sw: 'linear-gradient(135deg,#f4efe6,#cabfa9)' },
-      { id: 'noir',     name: 'Нуар',     sw: 'linear-gradient(135deg,#000,#5a5a5a)' },
+      { id: 'classic',  sw: 'linear-gradient(135deg,#0c0a14,#3a3550)' },
+      { id: 'rose',     sw: 'linear-gradient(135deg,#ff5c7a,#7a1430)' },
+      { id: 'polaroid', sw: 'linear-gradient(135deg,#f4efe6,#cabfa9)' },
+      { id: 'noir',     sw: 'linear-gradient(135deg,#000,#5a5a5a)' },
     ];
+    const STATUS_DOT = {
+      ongoing: { color: '#4ade80', label: T.stOngoing },
+      anons: { color: '#60a5fa', label: T.stAnons },
+    };
+    const SRC_BADGE = { shikimori: 'SHIKI', mal: 'MAL', anilist: 'AL' };
+    const HISTORY_KEY = 'shiki:recent';
 
+    /* ---------- dom ---------- */
     const $ = (id) => document.getElementById(id);
     const input = $('search');
+    const clearBtn = $('clearBtn');
     const results = $('results');
     const preview = $('preview');
     const canvas = $('canvas');
     const ctx = canvas.getContext('2d');
     const veil = $('veil');
     const shareBtn = $('shareBtn');
+    const downloadBtn = $('downloadBtn');
     const toast = $('toast');
+    const postersBox = $('posters');
+    const postersSection = $('postersSection');
+    const titleSection = $('titleSection');
+    const zoom = $('zoom');
 
+    $('tagline').textContent = T.tagline;
+    input.placeholder = T.placeholder;
+    $('backLabel').textContent = T.back;
+    $('posterLabel').textContent = T.poster;
+    $('titleLabel').textContent = T.titleSec;
+    $('styleLabel').textContent = T.style;
+    $('elementsLabel').textContent = T.elements;
+    veil.textContent = T.rendering;
+    shareBtn.textContent = T.share;
+    downloadBtn.textContent = T.download;
+    $('hint').textContent = inTelegram ? T.hintTg : T.hintWeb;
+
+    /* ---------- state ---------- */
     let activePreset = 'classic';
     let selected = null;
     let selectedPoster = null;
-    let posterUrls = [];
+    let posterItems = [];
+    let titleLang = RU ? 'ru' : 'orig';
+    const opts = { score: true, genres: true, mark: true };
     let searchTimer = null;
+    let searchAbort = null;
     let renderSeq = 0;
     let toastTimer = null;
+    let trendingItems = null;
     const imageCache = new Map();
-    const postersBox = $('posters');
-    const postersSection = $('postersSection');
 
     const fontsReady = Promise.all([
       document.fonts.load('900 56px Unbounded'),
@@ -385,11 +585,39 @@
       const parts = [];
       if (anime.year) parts.push(String(anime.year));
       if (anime.kind) parts.push(String(anime.kind).toUpperCase());
-      if (anime.episodes) parts.push(`${anime.episodes} эп.`);
+      if (anime.episodes) parts.push(`${anime.episodes} ${T.eps}`);
       return parts.join(' · ');
     }
 
-    function stateBlock(face, text) {
+    function displayTitle(anime) {
+      return titleLang === 'orig' ? anime.name : anime.title;
+    }
+
+    function hasTwoTitles(anime) {
+      return !!(anime.title && anime.name && anime.title !== anime.name);
+    }
+
+    function loadHistory() {
+      try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) || []; }
+      catch (_) { return []; }
+    }
+
+    function saveHistory(q) {
+      if (!q || q.length < 2) return;
+      const items = [q, ...loadHistory().filter((x) => x.toLowerCase() !== q.toLowerCase())].slice(0, 6);
+      try { localStorage.setItem(HISTORY_KEY, JSON.stringify(items)); } catch (_) {}
+    }
+
+    /* ---------- list building ---------- */
+
+    function sectionLabel(text) {
+      const div = document.createElement('div');
+      div.className = 'label';
+      div.textContent = text;
+      return div;
+    }
+
+    function stateBlock(face, text, retryFn) {
       results.innerHTML = '';
       const div = document.createElement('div');
       div.className = 'state';
@@ -398,16 +626,116 @@
       f.textContent = face;
       div.appendChild(f);
       div.appendChild(document.createTextNode(text));
+      if (retryFn) {
+        const btn = document.createElement('button');
+        btn.className = 'retry';
+        btn.textContent = T.retry;
+        btn.onclick = retryFn;
+        div.appendChild(btn);
+      }
       results.appendChild(div);
     }
 
-    function skeletons(n) {
-      results.innerHTML = '';
+    function skeletons(n, target) {
       for (let i = 0; i < n; i++) {
         const s = document.createElement('div');
         s.className = 'skel';
         s.style.animationDelay = `${i * 70}ms`;
-        results.appendChild(s);
+        (target || results).appendChild(s);
+      }
+    }
+
+    function buildRow(anime, i) {
+      const row = document.createElement('button');
+      row.className = 'row';
+      row.style.animationDelay = `${i * 45}ms`;
+
+      const img = document.createElement('img');
+      img.loading = 'lazy';
+      img.alt = '';
+      img.src = proxyUrl(anime.image_preview || anime.image_url);
+
+      const body = document.createElement('div');
+      const title = document.createElement('div');
+      title.className = 't';
+      title.textContent = anime.title;
+
+      const meta = document.createElement('div');
+      meta.className = 'm';
+      const status = STATUS_DOT[anime.status];
+      if (status) {
+        const st = document.createElement('span');
+        st.className = 'st';
+        st.style.background = status.color;
+        meta.appendChild(st);
+        meta.appendChild(document.createTextNode(`${status.label}  ·  `));
+      }
+      if (anime.score) {
+        const star = document.createElement('span');
+        star.className = 'star';
+        star.textContent = `★ ${anime.score}`;
+        meta.appendChild(star);
+        meta.appendChild(document.createTextNode('  ·  '));
+      }
+      meta.appendChild(document.createTextNode(metaLine(anime)));
+
+      body.appendChild(title);
+      body.appendChild(meta);
+      if (anime.genres?.length) {
+        const g = document.createElement('div');
+        g.className = 'g';
+        g.textContent = anime.genres.slice(0, 3).join(' · ');
+        body.appendChild(g);
+      }
+
+      row.appendChild(img);
+      row.appendChild(body);
+      row.onclick = () => pick(anime);
+      return row;
+    }
+
+    /* ---------- idle screen: history + trending ---------- */
+
+    async function idle() {
+      results.innerHTML = '';
+      const history = loadHistory();
+      if (history.length) {
+        results.appendChild(sectionLabel(T.recent));
+        const chips = document.createElement('div');
+        chips.className = 'chips';
+        for (const q of history) {
+          const chip = document.createElement('button');
+          chip.className = 'chip';
+          chip.textContent = q;
+          chip.onclick = () => { input.value = q; syncClear(); search(); };
+          chips.appendChild(chip);
+        }
+        results.appendChild(chips);
+      }
+
+      results.appendChild(sectionLabel(T.trending));
+      if (trendingItems === null) {
+        const holder = document.createElement('div');
+        holder.className = 'list';
+        skeletons(4, holder);
+        results.appendChild(holder);
+        try {
+          const response = await fetch('/api/trending');
+          trendingItems = ((await response.json()) || []).filter((a) => a.image_url);
+        } catch (_) {
+          trendingItems = [];
+        }
+        if (input.value.trim().length >= 2) return; // user started typing meanwhile
+        idle();
+        return;
+      }
+      if (trendingItems.length) {
+        trendingItems.forEach((anime, i) => results.appendChild(buildRow(anime, i)));
+      } else {
+        const div = document.createElement('div');
+        div.className = 'state';
+        div.textContent = T.idle;
+        results.appendChild(div);
       }
     }
 
@@ -416,62 +744,27 @@
     async function search() {
       const q = input.value.trim();
       if (q.length < 2) {
-        stateBlock('(˶ᵔ ᵕ ᵔ˶)', 'Введи название аниме — хотя бы две буквы');
+        idle();
         return;
       }
+      results.innerHTML = '';
       skeletons(4);
+      searchAbort?.abort();
+      searchAbort = new AbortController();
       try {
-        const response = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+        const response = await fetch(`/api/search?q=${encodeURIComponent(q)}`, { signal: searchAbort.signal });
         if (!response.ok) throw new Error('search failed');
         const items = (await response.json()).filter((a) => a.image_url);
-        if (q !== input.value.trim()) return; // stale response
+        if (q !== input.value.trim()) return; // stale
         if (!items.length) {
-          stateBlock('¯\\_(ツ)_/¯', 'Ничего не нашлось. Попробуй другое название');
+          stateBlock('¯\\_(ツ)_/¯', T.notFound);
           return;
         }
         results.innerHTML = '';
-        items.forEach((anime, i) => {
-          const row = document.createElement('button');
-          row.className = 'row';
-          row.style.animationDelay = `${i * 45}ms`;
-
-          const img = document.createElement('img');
-          img.loading = 'lazy';
-          img.alt = '';
-          img.src = proxyUrl(anime.image_url);
-
-          const body = document.createElement('div');
-          const title = document.createElement('div');
-          title.className = 't';
-          title.textContent = anime.title;
-
-          const meta = document.createElement('div');
-          meta.className = 'm';
-          if (anime.score) {
-            const star = document.createElement('span');
-            star.className = 'star';
-            star.textContent = `★ ${anime.score}`;
-            meta.appendChild(star);
-            meta.appendChild(document.createTextNode('  ·  '));
-          }
-          meta.appendChild(document.createTextNode(metaLine(anime)));
-
-          body.appendChild(title);
-          body.appendChild(meta);
-          if (anime.genres?.length) {
-            const g = document.createElement('div');
-            g.className = 'g';
-            g.textContent = anime.genres.slice(0, 3).join(' · ');
-            body.appendChild(g);
-          }
-
-          row.appendChild(img);
-          row.appendChild(body);
-          row.onclick = () => pick(anime);
-          results.appendChild(row);
-        });
-      } catch (_) {
-        stateBlock('(×_×)', 'Поиск сломался. Попробуй ещё раз');
+        items.forEach((anime, i) => results.appendChild(buildRow(anime, i)));
+      } catch (error) {
+        if (error.name === 'AbortError') return;
+        stateBlock('(×_×)', T.searchError, search);
       }
     }
 
@@ -515,6 +808,8 @@
       const scale = Math.max(w / img.width, h / img.height);
       const sw = w / scale, sh = h / scale;
       const sx = (img.width - sw) / 2, sy = (img.height - sh) / 2;
+      c.imageSmoothingEnabled = true;
+      c.imageSmoothingQuality = 'high';
       if (filter) c.filter = filter;
       c.drawImage(img, sx, sy, sw, sh, x, y, w, h);
       c.filter = 'none';
@@ -566,8 +861,11 @@
 
         const W = 720, H = 1080;
         ctx.clearRect(0, 0, W, H);
+        const cardTitle = displayTitle(anime);
+        const subtitle = titleLang !== 'orig' && hasTwoTitles(anime) ? anime.name : '';
         const meta = metaLine(anime);
-        const genres = (anime.genres || []).slice(0, 3);
+        const genres = opts.genres ? (anime.genres || []).slice(0, 3) : [];
+        const score = opts.score ? anime.score : null;
 
         if (preset === 'polaroid') {
           ctx.fillStyle = '#f4efe6';
@@ -582,22 +880,24 @@
           ctx.font = '700 42px Unbounded, system-ui, sans-serif';
           ctx.textAlign = 'center';
           let y = 886;
-          for (const line of wrapText(ctx, anime.title, W - 90, 2)) {
+          for (const line of wrapText(ctx, cardTitle, W - 90, 2)) {
             ctx.fillText(line, W / 2, y);
             y += 54;
           }
           ctx.font = '500 25px "Golos Text", system-ui, sans-serif';
           ctx.fillStyle = '#8a7f72';
-          const tail = [anime.score ? `★ ${anime.score}` : '', meta].filter(Boolean).join('   ·   ');
+          const tail = [score ? `★ ${score}` : '', meta].filter(Boolean).join('   ·   ');
           if (tail) { ctx.fillText(tail, W / 2, y + 8); y += 42; }
           if (genres.length) {
             ctx.font = '500 22px "Golos Text", system-ui, sans-serif';
             ctx.fillStyle = '#b0a596';
             ctx.fillText(genres.join(' · '), W / 2, y + 6);
           }
-          ctx.font = '500 20px Unbounded, system-ui, sans-serif';
-          ctx.fillStyle = '#cabfa9';
-          ctx.fillText('shiki · cards', W / 2, H - 32);
+          if (opts.mark) {
+            ctx.font = '500 20px Unbounded, system-ui, sans-serif';
+            ctx.fillStyle = '#cabfa9';
+            ctx.fillText('shiki · cards', W / 2, H - 32);
+          }
           ctx.textAlign = 'left';
           return;
         }
@@ -625,18 +925,19 @@
           ctx.fillRect(0, H - gh + 60, 10, gh - 60);
         }
 
-        drawScoreBadge(ctx, anime.score, noir ? '#ff5c7a' : '#ffc24b');
+        drawScoreBadge(ctx, score, noir ? '#ff5c7a' : '#ffc24b');
 
         const x = rose ? 44 : 36;
         ctx.textBaseline = 'top';
         ctx.font = `900 ${noir ? 58 : 52}px Unbounded, system-ui, sans-serif`;
-        const titleLines = wrapText(ctx, noir ? anime.title.toUpperCase() : anime.title, W - x - 36, 3);
+        const titleLines = wrapText(ctx, noir ? cardTitle.toUpperCase() : cardTitle, W - x - 36, 3);
         const lineStep = noir ? 72 : 66;
         const blocks =
           titleLines.length * lineStep +
-          (anime.name && anime.name !== anime.title ? 44 : 0) +
+          (subtitle ? 44 : 0) +
           (meta ? 46 : 0) +
-          (genres.length ? 62 : 0) + 58;
+          (genres.length ? 62 : 0) +
+          (opts.mark ? 58 : 26);
         let y = H - blocks - 28;
 
         ctx.fillStyle = noir ? '#ff5c7a' : '#ffffff';
@@ -645,10 +946,10 @@
           y += lineStep;
         }
 
-        if (anime.name && anime.name !== anime.title) {
+        if (subtitle) {
           ctx.font = '500 27px "Golos Text", system-ui, sans-serif';
           ctx.fillStyle = 'rgba(255, 255, 255, 0.72)';
-          ctx.fillText(wrapText(ctx, anime.name, W - x - 36, 1)[0] || '', x, y + 4);
+          ctx.fillText(wrapText(ctx, subtitle, W - x - 36, 1)[0] || '', x, y + 4);
           y += 44;
         }
 
@@ -666,33 +967,46 @@
           y += 62;
         }
 
-        ctx.font = '500 21px Unbounded, system-ui, sans-serif';
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
-        ctx.fillText('shiki · cards', x, H - 52);
+        if (opts.mark) {
+          ctx.font = '500 21px Unbounded, system-ui, sans-serif';
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
+          ctx.fillText('shiki · cards', x, H - 52);
+        }
         ctx.textBaseline = 'alphabetic';
       } finally {
         if (seq === renderSeq) veil.classList.remove('on');
       }
     }
 
+    function rerender() {
+      if (selected) renderCard(selected, activePreset).catch(() => showToast(T.posterFail));
+    }
+
     /* ---------- poster picker ---------- */
 
     function renderPosterStrip(loading) {
       postersBox.innerHTML = '';
-      for (const url of posterUrls) {
+      for (const item of posterItems) {
         const thumb = document.createElement('button');
-        thumb.className = url === selectedPoster ? 'thumb active' : 'thumb';
+        thumb.className = item.url === selectedPoster ? 'thumb active' : 'thumb';
         const img = document.createElement('img');
         img.loading = 'lazy';
         img.alt = '';
-        img.src = proxyUrl(url);
+        img.src = proxyUrl(item.thumb || item.url);
         thumb.appendChild(img);
+        const badge = SRC_BADGE[item.source];
+        if (badge) {
+          const src = document.createElement('span');
+          src.className = 'src';
+          src.textContent = badge;
+          thumb.appendChild(src);
+        }
         thumb.onclick = () => {
-          if (selectedPoster === url) return;
-          selectedPoster = url;
+          if (selectedPoster === item.url) return;
+          selectedPoster = item.url;
           tg?.HapticFeedback?.selectionChanged?.();
           renderPosterStrip(false);
-          if (selected) renderCard(selected, activePreset).catch(() => showToast('Не удалось загрузить постер'));
+          rerender();
         };
         postersBox.appendChild(thumb);
       }
@@ -704,7 +1018,7 @@
           postersBox.appendChild(skel);
         }
       }
-      postersSection.hidden = !loading && posterUrls.length < 2;
+      postersSection.hidden = !loading && posterItems.length < 2;
     }
 
     async function loadPosters(anime) {
@@ -713,48 +1027,122 @@
         const response = await fetch(`/api/anime/${anime.id}/posters`);
         const data = await response.json();
         if (selected !== anime) return;
-        const urls = [anime.image_url, ...(data.posters || []).map((p) => p.url)];
-        posterUrls = [...new Set(urls.filter(Boolean))];
+        const seen = new Set(posterItems.map((p) => p.url));
+        for (const p of data.posters || []) {
+          if (!p.url || seen.has(p.url)) continue;
+          seen.add(p.url);
+          posterItems.push(p);
+        }
         renderPosterStrip(false);
       } catch (_) {
         if (selected === anime) renderPosterStrip(false);
       }
     }
 
-    /* ---------- preview flow ---------- */
+    /* ---------- pills & toggles ---------- */
+
+    function makePills(container, items, isActive, onPick) {
+      container.innerHTML = '';
+      for (const item of items) {
+        const pill = document.createElement('button');
+        pill.className = isActive(item) ? 'pill active' : 'pill';
+        if (item.sw) {
+          const sw = document.createElement('span');
+          sw.className = 'sw';
+          sw.style.background = item.sw;
+          pill.appendChild(sw);
+        }
+        pill.appendChild(document.createTextNode(item.name));
+        pill.onclick = () => onPick(item);
+        container.appendChild(pill);
+      }
+    }
 
     function drawPresets() {
-      const box = $('presets');
-      box.innerHTML = '';
-      for (const preset of PRESETS) {
-        const pill = document.createElement('button');
-        pill.className = preset.id === activePreset ? 'pill active' : 'pill';
-        const sw = document.createElement('span');
-        sw.className = 'sw';
-        sw.style.background = preset.sw;
-        pill.appendChild(sw);
-        pill.appendChild(document.createTextNode(preset.name));
-        pill.onclick = () => {
-          if (activePreset === preset.id) return;
-          activePreset = preset.id;
+      makePills(
+        $('presets'),
+        PRESETS.map((p) => ({ ...p, name: T.presets[p.id] })),
+        (p) => p.id === activePreset,
+        (p) => {
+          if (activePreset === p.id) return;
+          activePreset = p.id;
           tg?.HapticFeedback?.selectionChanged?.();
           drawPresets();
-          if (selected) renderCard(selected, activePreset).catch(() => showToast('Не удалось отрендерить'));
-        };
-        box.appendChild(pill);
+          rerender();
+        },
+      );
+    }
+
+    function drawTitlePills() {
+      if (!selected || !hasTwoTitles(selected) || !selected.title) {
+        titleSection.hidden = true;
+        return;
+      }
+      titleSection.hidden = false;
+      makePills(
+        $('titlePills'),
+        [{ id: 'ru', name: T.titleRu }, { id: 'orig', name: T.titleOrig }],
+        (p) => p.id === titleLang,
+        (p) => {
+          if (titleLang === p.id) return;
+          titleLang = p.id;
+          tg?.HapticFeedback?.selectionChanged?.();
+          drawTitlePills();
+          rerender();
+        },
+      );
+    }
+
+    function drawToggles() {
+      makePills(
+        $('toggles'),
+        [
+          { id: 'score', name: T.elScore },
+          { id: 'genres', name: T.elGenres },
+          { id: 'mark', name: T.elMark },
+        ],
+        (p) => opts[p.id],
+        (p) => {
+          opts[p.id] = !opts[p.id];
+          tg?.HapticFeedback?.selectionChanged?.();
+          drawToggles();
+          rerender();
+        },
+      );
+    }
+
+    /* ---------- preview flow ---------- */
+
+    function updateMainButton(visible) {
+      if (!inTelegram || !tg.MainButton) return;
+      if (visible) {
+        tg.MainButton.setParams({
+          text: T.share.toUpperCase(),
+          color: '#ff5c7a',
+          text_color: '#ffffff',
+          is_visible: true,
+        });
+      } else {
+        tg.MainButton.hide();
       }
     }
 
     async function pick(anime) {
+      saveHistory(input.value.trim());
       selected = anime;
       selectedPoster = anime.image_url;
-      posterUrls = [anime.image_url].filter(Boolean);
+      titleLang = hasTwoTitles(anime) && RU ? 'ru' : 'orig';
+      posterItems = anime.image_url
+        ? [{ url: anime.image_url, thumb: anime.image_preview || anime.image_url, source: anime.source }]
+        : [];
       tg?.HapticFeedback?.impactOccurred?.('light');
       preview.classList.add('open');
       tg?.BackButton?.show?.();
+      updateMainButton(true);
       shareBtn.disabled = false;
-      shareBtn.textContent = 'Отправить карточку';
-      renderCard(anime, activePreset).catch(() => showToast('Не удалось загрузить постер'));
+      shareBtn.textContent = T.share;
+      drawTitlePills();
+      rerender();
       loadPosters(anime);
 
       if (anime.source === 'shikimori' && !(anime.genres || []).length) {
@@ -763,25 +1151,31 @@
           const data = await response.json();
           if (data.genres?.length && selected === anime) {
             anime.genres = data.genres;
-            renderCard(anime, activePreset).catch(() => {});
+            rerender();
           }
         } catch (_) { /* genres are optional */ }
       }
     }
 
     function closePreview() {
+      if (zoom.classList.contains('open')) {
+        zoom.classList.remove('open');
+        return;
+      }
       preview.classList.remove('open');
       tg?.BackButton?.hide?.();
+      updateMainButton(false);
       selected = null;
       selectedPoster = null;
-      posterUrls = [];
+      posterItems = [];
       renderSeq++;
     }
 
     async function share() {
-      if (!selected) return;
+      if (!selected || shareBtn.disabled) return;
       shareBtn.disabled = true;
-      shareBtn.textContent = 'Загружаю…';
+      shareBtn.textContent = T.uploading;
+      if (inTelegram) tg.MainButton?.showProgress?.(false);
       try {
         const image = canvas.toDataURL('image/jpeg', 0.88);
         const response = await fetch('/api/rendered', {
@@ -789,44 +1183,82 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             image,
-            meta: { title: selected.title, subtitle: selected.name, url: selected.page_url },
+            meta: { title: displayTitle(selected), subtitle: selected.name, url: selected.page_url },
           }),
         });
         const data = await response.json();
         if (!data.ok) throw new Error(data.error || 'upload failed');
         tg?.HapticFeedback?.notificationOccurred?.('success');
-        if (tg?.switchInlineQuery) {
+        if (tg?.switchInlineQuery && inTelegram) {
           tg.switchInlineQuery(data.query, ['users', 'groups', 'channels']);
         } else {
           await navigator.clipboard?.writeText(data.query);
-          showToast(`Скопировано: ${data.query}`);
+          showToast(T.copied + data.query);
         }
       } catch (_) {
-        showToast('Не получилось отправить, попробуй ещё раз');
+        showToast(T.sendFail);
         tg?.HapticFeedback?.notificationOccurred?.('error');
       } finally {
+        if (inTelegram) tg.MainButton?.hideProgress?.();
         shareBtn.disabled = false;
-        shareBtn.textContent = 'Отправить карточку';
+        shareBtn.textContent = T.share;
       }
+    }
+
+    function download() {
+      if (!selected) return;
+      const link = document.createElement('a');
+      link.download = `shiki-card-${selected.id}.jpg`;
+      link.href = canvas.toDataURL('image/jpeg', 0.92);
+      link.click();
     }
 
     /* ---------- wiring ---------- */
 
+    function syncClear() {
+      clearBtn.classList.toggle('show', !!input.value);
+    }
+
     input.addEventListener('input', () => {
+      syncClear();
       clearTimeout(searchTimer);
+      if (!input.value.trim()) { idle(); return; }
       searchTimer = setTimeout(search, 350);
     });
+    clearBtn.onclick = () => {
+      input.value = '';
+      syncClear();
+      input.focus();
+      idle();
+    };
+
     $('backBtn').onclick = closePreview;
     tg?.BackButton?.onClick?.(closePreview);
     shareBtn.onclick = share;
+    if (inTelegram) {
+      tg.MainButton?.onClick?.(share);
+      $('actions').hidden = true;
+    } else {
+      downloadBtn.hidden = false;
+      downloadBtn.onclick = download;
+    }
+
+    $('stage').onclick = () => {
+      if (!selected) return;
+      $('zoomImg').src = canvas.toDataURL('image/jpeg', 0.92);
+      zoom.classList.add('open');
+    };
+    zoom.onclick = () => zoom.classList.remove('open');
 
     drawPresets();
+    drawToggles();
     const initialQuery = new URLSearchParams(window.location.search).get('q') || '';
     if (initialQuery) {
       input.value = initialQuery;
+      syncClear();
       search();
     } else {
-      stateBlock('(˶ᵔ ᵕ ᵔ˶)', 'Введи название аниме — хотя бы две буквы');
+      idle();
     }
   </script>
 </body>

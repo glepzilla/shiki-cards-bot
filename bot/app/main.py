@@ -15,6 +15,7 @@ from urllib.parse import urlencode, urlparse
 from uuid import uuid4
 
 from aiogram import Bot, Dispatcher, Router
+from aiogram.filters import CommandStart
 from aiogram.types import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -22,6 +23,8 @@ from aiogram.types import (
     InlineQueryResultPhoto,
     InlineQueryResultsButton,
     InlineQueryResultUnion,
+    MenuButtonWebApp,
+    Message,
     WebAppInfo,
 )
 from aiohttp import ClientSession, ClientTimeout, web
@@ -63,6 +66,7 @@ class Anime:
     score: str | None
     status: str | None
     image_url: str | None
+    image_preview: str | None
     episodes: int | None
     year: int | None
     genres: tuple[str, ...]
@@ -92,6 +96,7 @@ class Anime:
             score=None if not score or str(score) == "0.0" else str(score),
             status=raw.get("status"),
             image_url=absolute_url(image.get("original") or image.get("preview")),
+            image_preview=absolute_url(image.get("preview") or image.get("original")),
             episodes=raw.get("episodes") or raw.get("episodes_aired") or None,
             year=year,
             genres=(),
@@ -114,6 +119,7 @@ class Anime:
             score=str(score) if score else None,
             status=JIKAN_STATUS.get(str(raw.get("status") or "")),
             image_url=images.get("large_image_url") or images.get("image_url"),
+            image_preview=images.get("image_url") or images.get("large_image_url"),
             episodes=raw.get("episodes"),
             year=raw.get("year"),
             genres=genres,
@@ -222,21 +228,59 @@ async def fetch_shikimori_genres(session: ClientSession, anime_id: int) -> list[
     return [genre for genre in genres if genre][:4]
 
 
-async def fetch_jikan_pictures(session: ClientSession, mal_id: int) -> list[str]:
+async def trending_anime(
+    session: ClientSession, cache: TTLCache[list[Anime]]
+) -> list[Anime]:
+    """Top-ranked currently airing shows for the webapp idle screen."""
+    cached = cache.get("__trending__")
+    if cached is not None:
+        return cached
+
+    animes: list[Anime] = []
+    headers = {"User-Agent": USER_AGENT}
+    try:
+        params = {"limit": "10", "order": "ranked", "status": "ongoing"}
+        async with session.get(
+            f"{SHIKIMORI_ORIGIN}/api/animes", params=params, headers=headers
+        ) as resp:
+            resp.raise_for_status()
+            animes = [Anime.from_shikimori(item) for item in await resp.json()]
+    except Exception:
+        logging.warning("Shikimori trending failed, trying Jikan", exc_info=True)
+
+    if not animes:
+        try:
+            params = {"filter": "airing", "limit": "10"}
+            async with session.get(
+                f"{JIKAN_API}/top/anime", params=params, headers=headers
+            ) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
+            animes = [Anime.from_jikan(item) for item in data.get("data") or []]
+        except Exception:
+            logging.warning("Jikan trending fallback failed", exc_info=True)
+
+    if animes:
+        cache.put("__trending__", animes)
+    return animes
+
+
+async def fetch_jikan_pictures(session: ClientSession, mal_id: int) -> list[tuple[str, str]]:
     headers = {"User-Agent": USER_AGENT}
     async with session.get(f"{JIKAN_API}/anime/{mal_id}/pictures", headers=headers) as resp:
         resp.raise_for_status()
         data = await resp.json()
-    urls: list[str] = []
+    pairs: list[tuple[str, str]] = []
     for item in data.get("data") or []:
         jpg = item.get("jpg") or {}
         url = jpg.get("large_image_url") or jpg.get("image_url")
+        thumb = jpg.get("image_url") or jpg.get("large_image_url")
         if url:
-            urls.append(str(url))
-    return urls
+            pairs.append((str(url), str(thumb or url)))
+    return pairs
 
 
-async def fetch_anilist_cover(session: ClientSession, mal_id: int) -> list[str]:
+async def fetch_anilist_cover(session: ClientSession, mal_id: int) -> list[tuple[str, str]]:
     query = "query($id:Int){Media(idMal:$id,type:ANIME){coverImage{extraLarge large}}}"
     payload = {"query": query, "variables": {"id": mal_id}}
     headers = {"User-Agent": USER_AGENT}
@@ -245,11 +289,17 @@ async def fetch_anilist_cover(session: ClientSession, mal_id: int) -> list[str]:
         data = await resp.json()
     cover = ((data.get("data") or {}).get("Media") or {}).get("coverImage") or {}
     url = cover.get("extraLarge") or cover.get("large")
-    return [str(url)] if url else []
+    thumb = cover.get("large") or cover.get("extraLarge")
+    return [(str(url), str(thumb or url))] if url else []
+
+
+def allowed_image(url: str) -> bool:
+    parsed = urlparse(url)
+    return parsed.scheme == "https" and parsed.netloc in ALLOWED_IMAGE_HOSTS
 
 
 async def collect_posters(session: ClientSession, mal_id: int) -> list[dict[str, str]]:
-    """Alternative posters from Jikan (MAL pictures) and AniList; Shikimori ids match MAL ids."""
+    """Alternative posters from AniList and Jikan (MAL pictures); Shikimori ids match MAL ids."""
     results = await asyncio.gather(
         fetch_anilist_cover(session, mal_id),
         fetch_jikan_pictures(session, mal_id),
@@ -261,14 +311,13 @@ async def collect_posters(session: ClientSession, mal_id: int) -> list[dict[str,
         if isinstance(result, BaseException):
             logging.warning("poster fetch (%s) failed for %s: %s", source, mal_id, result)
             continue
-        for url in result:
-            parsed = urlparse(url)
-            if parsed.scheme != "https" or parsed.netloc not in ALLOWED_IMAGE_HOSTS:
-                continue
-            if url in seen:
+        for url, thumb in result:
+            if not allowed_image(url) or url in seen:
                 continue
             seen.add(url)
-            posters.append({"url": url, "source": source})
+            posters.append(
+                {"url": url, "thumb": thumb if allowed_image(thumb) else url, "source": source}
+            )
     return posters[:12]
 
 
@@ -291,6 +340,7 @@ def anime_payload(anime: Anime) -> dict[str, Any]:
         "score": anime.score,
         "status": anime.status,
         "image_url": anime.image_url,
+        "image_preview": anime.image_preview,
         "episodes": anime.episodes,
         "year": anime.year,
         "genres": list(anime.genres),
@@ -299,7 +349,7 @@ def anime_payload(anime: Anime) -> dict[str, Any]:
     }
 
 
-def description(anime: Anime) -> str:
+def description(anime: Anime, ru: bool = True) -> str:
     parts = [anime.name]
     meta = []
     if anime.score:
@@ -309,7 +359,7 @@ def description(anime: Anime) -> str:
     if anime.year:
         meta.append(str(anime.year))
     if anime.episodes:
-        meta.append(f"{anime.episodes} эп.")
+        meta.append(f"{anime.episodes} эп." if ru else f"{anime.episodes} ep.")
     if meta:
         parts.append(" · ".join(meta))
     return "\n".join(parts)
@@ -374,11 +424,32 @@ def webapp_url(settings: Settings, query_text: str = "") -> str:
     return f"{settings.public_base_url.rstrip('/')}/webapp{query}"
 
 
-def results_button(settings: Settings, query_text: str = "") -> InlineQueryResultsButton:
+def results_button(
+    settings: Settings, query_text: str = "", ru: bool = True
+) -> InlineQueryResultsButton:
     return InlineQueryResultsButton(
-        text="🎨 Собрать карточку в WebApp",
+        text="🎨 Собрать карточку в WebApp" if ru else "🎨 Build a card in WebApp",
         web_app=WebAppInfo(url=webapp_url(settings, query_text)),
     )
+
+
+def is_russian(language_code: str | None) -> bool:
+    return not language_code or language_code.startswith("ru")
+
+
+START_TEXT_RU = (
+    "Привет! Я собираю красивые карточки аниме.\n\n"
+    "1. Открой конструктор кнопкой ниже или напиши <code>@{username} название</code> "
+    "в любом чате\n"
+    "2. Выбери аниме, постер и стиль\n"
+    "3. Отправь карточку друзьям"
+)
+START_TEXT_EN = (
+    "Hi! I build pretty anime cards.\n\n"
+    "1. Open the builder below or type <code>@{username} title</code> in any chat\n"
+    "2. Pick an anime, a poster and a style\n"
+    "3. Share the card with friends"
+)
 
 
 def cleanup_rendered_dir(settings: Settings) -> None:
@@ -427,16 +498,42 @@ def build_router(
 ) -> Router:
     router = Router()
 
+    @router.message(CommandStart())
+    async def start(message: Message) -> None:
+        ru = is_russian(message.from_user.language_code if message.from_user else None)
+        username = (await message.bot.me()).username if message.bot else "bot"
+        template = START_TEXT_RU if ru else START_TEXT_EN
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="🎨 Открыть конструктор" if ru else "🎨 Open the builder",
+                        web_app=WebAppInfo(url=webapp_url(settings)),
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="💬 Попробовать в чате" if ru else "💬 Try inline",
+                        switch_inline_query="",
+                    )
+                ],
+            ]
+        )
+        await message.answer(
+            template.format(username=username), parse_mode="HTML", reply_markup=keyboard
+        )
+
     @router.inline_query()
     async def inline_search(query: InlineQuery) -> None:
         text = query.query.strip()
+        ru = is_russian(query.from_user.language_code)
         card_id = parse_card_query(text)
 
         if card_id:
             image_path = settings.rendered_dir / f"{card_id}.jpg"
             if not image_path.exists():
                 await query.answer(
-                    [], cache_time=1, is_personal=True, button=results_button(settings, text)
+                    [], cache_time=1, is_personal=True, button=results_button(settings, text, ru)
                 )
                 return
             meta = load_card_meta(settings, card_id)
@@ -448,7 +545,7 @@ def build_router(
                         photo_url=image_url,
                         thumbnail_url=image_url,
                         title=str(meta.get("title") or "Shiki Card"),
-                        description="Готовая карточка из WebApp",
+                        description="Готовая карточка из WebApp" if ru else "Card from the WebApp",
                         caption=card_caption(meta),
                         parse_mode="HTML",
                         reply_markup=card_markup(meta),
@@ -456,13 +553,13 @@ def build_router(
                 ],
                 cache_time=300,
                 is_personal=True,
-                button=results_button(settings, text),
+                button=results_button(settings, text, ru),
             )
             return
 
         if len(text) < 2:
             await query.answer(
-                [], cache_time=1, is_personal=True, button=results_button(settings, text)
+                [], cache_time=1, is_personal=True, button=results_button(settings, text, ru)
             )
             return
 
@@ -471,7 +568,7 @@ def build_router(
         except Exception:
             logging.exception("anime search failed")
             await query.answer(
-                [], cache_time=1, is_personal=True, button=results_button(settings, text)
+                [], cache_time=1, is_personal=True, button=results_button(settings, text, ru)
             )
             return
 
@@ -483,9 +580,9 @@ def build_router(
                 InlineQueryResultPhoto(
                     id=f"{anime.source}-{anime.id}",
                     photo_url=anime.image_url,
-                    thumbnail_url=anime.image_url,
+                    thumbnail_url=anime.image_preview or anime.image_url,
                     title=anime.title,
-                    description=description(anime),
+                    description=description(anime, ru),
                     caption=caption(anime),
                     parse_mode="HTML",
                     reply_markup=anime_markup(anime),
@@ -496,7 +593,7 @@ def build_router(
             results,
             cache_time=30,
             is_personal=True,
-            button=results_button(settings, text),
+            button=results_button(settings, text, ru),
         )
 
     return router
@@ -509,6 +606,7 @@ async def create_web_app(
     app = web.Application(client_max_size=8 * 1024 * 1024)
     html_path = Path(__file__).with_name("webapp.html")
     poster_cache: TTLCache[list[dict[str, str]]] = TTLCache(ttl=3600)
+    trending_cache: TTLCache[list[Anime]] = TTLCache(ttl=1800)
 
     async def webapp_page(_: web.Request) -> web.FileResponse:
         return web.FileResponse(html_path)
@@ -522,6 +620,10 @@ async def create_web_app(
         except Exception:
             logging.exception("webapp search failed")
             return web.json_response([], status=500)
+        return web.json_response([anime_payload(anime) for anime in animes])
+
+    async def trending_api(_: web.Request) -> web.Response:
+        animes = await trending_anime(session, trending_cache)
         return web.json_response([anime_payload(anime) for anime in animes])
 
     async def genres_api(request: web.Request) -> web.Response:
@@ -558,7 +660,10 @@ async def create_web_app(
         return web.Response(
             body=body,
             content_type=content_type,
-            headers={"Access-Control-Allow-Origin": "*"},
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Cache-Control": "public, max-age=86400, immutable",
+            },
         )
 
     async def save_rendered(request: web.Request) -> web.Response:
@@ -591,6 +696,7 @@ async def create_web_app(
 
     app.router.add_get("/webapp", webapp_page)
     app.router.add_get("/api/search", search_api)
+    app.router.add_get("/api/trending", trending_api)
     app.router.add_get("/api/anime/{anime_id}/genres", genres_api)
     app.router.add_get("/api/anime/{anime_id}/posters", posters_api)
     app.router.add_get("/api/image", image_proxy)
@@ -611,6 +717,15 @@ async def main() -> None:
         bot = Bot(settings.bot_token)
         dp = Dispatcher()
         dp.include_router(build_router(settings, session, cache))
+
+        try:
+            await bot.set_chat_menu_button(
+                menu_button=MenuButtonWebApp(
+                    text="Карточки", web_app=WebAppInfo(url=webapp_url(settings))
+                )
+            )
+        except Exception:
+            logging.warning("failed to set chat menu button", exc_info=True)
 
         web_app = await create_web_app(settings, session, cache)
         runner = web.AppRunner(web_app)
