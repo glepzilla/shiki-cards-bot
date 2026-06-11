@@ -30,8 +30,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 SHIKIMORI_ORIGIN = "https://shikimori.one"
 MAL_ORIGIN = "https://myanimelist.net"
 JIKAN_API = "https://api.jikan.moe/v4"
+ANILIST_API = "https://graphql.anilist.co"
 USER_AGENT = "shiki-cards-bot/0.2"
-ALLOWED_IMAGE_HOSTS = {"shikimori.one", "cdn.myanimelist.net"}
+ALLOWED_IMAGE_HOSTS = {"shikimori.one", "cdn.myanimelist.net", "s4.anilist.co"}
 ALLOWED_LINK_HOSTS = {"shikimori.one", "myanimelist.net"}
 
 JIKAN_STATUS = {
@@ -120,26 +121,26 @@ class Anime:
         )
 
 
-class SearchCache:
-    """Tiny in-memory TTL cache so repeated inline queries don't hammer the APIs."""
+class TTLCache[T]:
+    """Tiny in-memory TTL cache so repeated requests don't hammer external APIs."""
 
     def __init__(self, ttl: float, max_entries: int = 128) -> None:
         self._ttl = ttl
         self._max_entries = max_entries
-        self._entries: OrderedDict[str, tuple[float, list[Anime]]] = OrderedDict()
+        self._entries: OrderedDict[str, tuple[float, T]] = OrderedDict()
 
-    def get(self, key: str) -> list[Anime] | None:
+    def get(self, key: str) -> T | None:
         entry = self._entries.get(key)
         if entry is None:
             return None
-        stored_at, animes = entry
+        stored_at, value = entry
         if monotonic() - stored_at > self._ttl:
             del self._entries[key]
             return None
-        return animes
+        return value
 
-    def put(self, key: str, animes: list[Anime]) -> None:
-        self._entries[key] = (monotonic(), animes)
+    def put(self, key: str, value: T) -> None:
+        self._entries[key] = (monotonic(), value)
         self._entries.move_to_end(key)
         while len(self._entries) > self._max_entries:
             self._entries.popitem(last=False)
@@ -179,7 +180,9 @@ async def search_jikan(session: ClientSession, query: str) -> list[Anime]:
     return [Anime.from_jikan(item) for item in data.get("data") or []]
 
 
-async def search_anime(session: ClientSession, cache: SearchCache, query: str) -> list[Anime]:
+async def search_anime(
+    session: ClientSession, cache: TTLCache[list[Anime]], query: str
+) -> list[Anime]:
     """Shikimori first (Russian titles), Jikan as fallback when it fails or finds nothing."""
     key = query.casefold()
     cached = cache.get(key)
@@ -217,6 +220,56 @@ async def fetch_shikimori_genres(session: ClientSession, anime_id: int) -> list[
         for genre in data.get("genres") or []
     ]
     return [genre for genre in genres if genre][:4]
+
+
+async def fetch_jikan_pictures(session: ClientSession, mal_id: int) -> list[str]:
+    headers = {"User-Agent": USER_AGENT}
+    async with session.get(f"{JIKAN_API}/anime/{mal_id}/pictures", headers=headers) as resp:
+        resp.raise_for_status()
+        data = await resp.json()
+    urls: list[str] = []
+    for item in data.get("data") or []:
+        jpg = item.get("jpg") or {}
+        url = jpg.get("large_image_url") or jpg.get("image_url")
+        if url:
+            urls.append(str(url))
+    return urls
+
+
+async def fetch_anilist_cover(session: ClientSession, mal_id: int) -> list[str]:
+    query = "query($id:Int){Media(idMal:$id,type:ANIME){coverImage{extraLarge large}}}"
+    payload = {"query": query, "variables": {"id": mal_id}}
+    headers = {"User-Agent": USER_AGENT}
+    async with session.post(ANILIST_API, json=payload, headers=headers) as resp:
+        resp.raise_for_status()
+        data = await resp.json()
+    cover = ((data.get("data") or {}).get("Media") or {}).get("coverImage") or {}
+    url = cover.get("extraLarge") or cover.get("large")
+    return [str(url)] if url else []
+
+
+async def collect_posters(session: ClientSession, mal_id: int) -> list[dict[str, str]]:
+    """Alternative posters from Jikan (MAL pictures) and AniList; Shikimori ids match MAL ids."""
+    results = await asyncio.gather(
+        fetch_anilist_cover(session, mal_id),
+        fetch_jikan_pictures(session, mal_id),
+        return_exceptions=True,
+    )
+    posters: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for source, result in zip(("anilist", "mal"), results, strict=True):
+        if isinstance(result, BaseException):
+            logging.warning("poster fetch (%s) failed for %s: %s", source, mal_id, result)
+            continue
+        for url in result:
+            parsed = urlparse(url)
+            if parsed.scheme != "https" or parsed.netloc not in ALLOWED_IMAGE_HOSTS:
+                continue
+            if url in seen:
+                continue
+            seen.add(url)
+            posters.append({"url": url, "source": source})
+    return posters[:12]
 
 
 def parse_card_query(text: str) -> str | None:
@@ -369,7 +422,9 @@ def cleanup_rendered_dir(settings: Settings) -> None:
         )
 
 
-def build_router(settings: Settings, session: ClientSession, cache: SearchCache) -> Router:
+def build_router(
+    settings: Settings, session: ClientSession, cache: TTLCache[list[Anime]]
+) -> Router:
     router = Router()
 
     @router.inline_query()
@@ -448,11 +503,12 @@ def build_router(settings: Settings, session: ClientSession, cache: SearchCache)
 
 
 async def create_web_app(
-    settings: Settings, session: ClientSession, cache: SearchCache
+    settings: Settings, session: ClientSession, cache: TTLCache[list[Anime]]
 ) -> web.Application:
     settings.rendered_dir.mkdir(parents=True, exist_ok=True)
     app = web.Application(client_max_size=8 * 1024 * 1024)
     html_path = Path(__file__).with_name("webapp.html")
+    poster_cache: TTLCache[list[dict[str, str]]] = TTLCache(ttl=3600)
 
     async def webapp_page(_: web.Request) -> web.FileResponse:
         return web.FileResponse(html_path)
@@ -478,6 +534,17 @@ async def create_web_app(
             logging.warning("genres fetch failed for %s", raw_id, exc_info=True)
             genres = []
         return web.json_response({"genres": genres})
+
+    async def posters_api(request: web.Request) -> web.Response:
+        raw_id = request.match_info["anime_id"]
+        if not raw_id.isdigit():
+            return web.json_response({"posters": []})
+        cached = poster_cache.get(raw_id)
+        if cached is not None:
+            return web.json_response({"posters": cached})
+        posters = await collect_posters(session, int(raw_id))
+        poster_cache.put(raw_id, posters)
+        return web.json_response({"posters": posters})
 
     async def image_proxy(request: web.Request) -> web.Response:
         url = request.query.get("url") or ""
@@ -525,6 +592,7 @@ async def create_web_app(
     app.router.add_get("/webapp", webapp_page)
     app.router.add_get("/api/search", search_api)
     app.router.add_get("/api/anime/{anime_id}/genres", genres_api)
+    app.router.add_get("/api/anime/{anime_id}/posters", posters_api)
     app.router.add_get("/api/image", image_proxy)
     app.router.add_post("/api/rendered", save_rendered)
     app.router.add_static(
@@ -537,7 +605,7 @@ async def main() -> None:
     logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
     settings = Settings()  # type: ignore[call-arg]  # fields come from env/.env
     cleanup_rendered_dir(settings)
-    cache = SearchCache(ttl=settings.search_cache_ttl)
+    cache: TTLCache[list[Anime]] = TTLCache(ttl=settings.search_cache_ttl)
 
     async with ClientSession(timeout=ClientTimeout(total=15)) as session:
         bot = Bot(settings.bot_token)
