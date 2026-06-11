@@ -1,0 +1,12 @@
+services:
+  bot:
+    build: .
+    env_file: .env
+    ports:
+      - "8080:8080"
+    volumes:
+      - rendered:/app/.cache/rendered
+    restart: unless-stopped
+
+volumes:
+  rendered:

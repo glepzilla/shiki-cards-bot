@@ -1,0 +1,29 @@
+[project]
+name = "shiki-cards-bot"
+version = "0.1.0"
+description = "Telegram inline bot for sharing anime cards from Shikimori"
+requires-python = ">=3.14"
+dependencies = [
+  "aiogram>=3.20.0",
+  "aiohttp>=3.11.0",
+  "pydantic-settings>=2.8.0",
+]
+
+[dependency-groups]
+dev = [
+  "ruff>=0.11.0",
+  "mypy>=1.15.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.14"
+strict = true
+mypy_path = "bot"
+packages = ["app"]

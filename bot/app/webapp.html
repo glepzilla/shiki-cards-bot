@@ -1,0 +1,735 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <meta name="theme-color" content="#0c0a14" />
+  <title>Shiki Cards</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;900&family=Golos+Text:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0c0a14;
+      --raise: #16131f;
+      --raise-2: #1d1929;
+      --line: #2a2438;
+      --text: #f2eef9;
+      --muted: #9b93b3;
+      --faint: #6f6787;
+      --accent: #ff5c7a;
+      --accent-deep: #c2294a;
+      --accent-soft: rgba(255, 92, 122, 0.14);
+      --amber: #ffc24b;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      background-image: radial-gradient(900px 420px at 110% -10%, rgba(255, 92, 122, 0.09), transparent 60%),
+                        radial-gradient(700px 380px at -20% 0%, rgba(98, 70, 200, 0.10), transparent 55%);
+      color: var(--text);
+      font-family: "Golos Text", system-ui, -apple-system, sans-serif;
+      overflow-x: hidden;
+    }
+    body::after {
+      content: "";
+      position: fixed; inset: 0;
+      pointer-events: none;
+      opacity: 0.05;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+      z-index: 50;
+    }
+
+    .wrap { padding: 16px 16px 28px; max-width: 560px; margin: 0 auto; }
+
+    /* ---------- header ---------- */
+    header { display: flex; align-items: baseline; gap: 10px; margin: 2px 2px 14px; animation: rise 0.5s both; }
+    .mark {
+      font-family: Unbounded, sans-serif;
+      font-weight: 900;
+      font-size: 15px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+    }
+    .mark em { font-style: normal; color: var(--accent); }
+    .dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 10px var(--accent);
+      animation: pulse 2.2s infinite;
+      align-self: center;
+    }
+    .tag { color: var(--faint); font-size: 12px; margin-left: auto; }
+
+    /* ---------- search ---------- */
+    .search { position: relative; animation: rise 0.5s 0.06s both; }
+    .search svg {
+      position: absolute; left: 16px; top: 50%; translate: 0 -50%;
+      width: 18px; height: 18px; color: var(--faint); pointer-events: none;
+    }
+    .search input {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 15px 16px 15px 46px;
+      background: var(--raise);
+      color: var(--text);
+      font: 500 16px "Golos Text", sans-serif;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .search input::placeholder { color: var(--faint); }
+    .search input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+
+    /* ---------- results ---------- */
+    .list { display: grid; gap: 10px; margin-top: 14px; }
+    .row {
+      display: grid;
+      grid-template-columns: 56px 1fr;
+      gap: 12px;
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 10px;
+      background: var(--raise);
+      color: var(--text);
+      text-align: left;
+      font: inherit;
+      cursor: pointer;
+      animation: rise 0.4s both;
+      transition: transform 0.12s, border-color 0.2s, background 0.2s;
+    }
+    .row:active { transform: scale(0.98); border-color: var(--accent); background: var(--raise-2); }
+    .row img { width: 56px; height: 80px; object-fit: cover; border-radius: 10px; background: var(--raise-2); }
+    .row .t { font-weight: 700; font-size: 15px; line-height: 1.25; margin-bottom: 3px; }
+    .row .m { color: var(--muted); font-size: 12.5px; line-height: 1.4; }
+    .row .m .star { color: var(--amber); }
+    .row .g { color: var(--faint); font-size: 11.5px; margin-top: 2px; }
+
+    .state {
+      color: var(--muted);
+      text-align: center;
+      padding: 44px 12px;
+      font-size: 14px;
+      animation: rise 0.4s both;
+    }
+    .state .face {
+      display: block;
+      font-family: Unbounded, sans-serif;
+      font-size: 22px;
+      color: var(--faint);
+      margin-bottom: 10px;
+      letter-spacing: 0.04em;
+    }
+
+    .skel {
+      height: 100px; border-radius: 16px; border: 1px solid var(--line);
+      background: linear-gradient(100deg, var(--raise) 40%, var(--raise-2) 50%, var(--raise) 60%);
+      background-size: 240% 100%;
+      animation: shimmer 1.1s linear infinite;
+    }
+
+    /* ---------- preview overlay ---------- */
+    .preview {
+      position: fixed; inset: 0;
+      background: var(--bg);
+      background-image: radial-gradient(700px 360px at 50% -10%, rgba(255, 92, 122, 0.10), transparent 60%);
+      z-index: 40;
+      overflow-y: auto;
+      opacity: 0;
+      transform: translateY(24px);
+      pointer-events: none;
+      transition: opacity 0.25s, transform 0.25s;
+    }
+    .preview.open { opacity: 1; transform: none; pointer-events: auto; }
+    .preview .inner { padding: 14px 16px 30px; max-width: 560px; margin: 0 auto; }
+
+    .back {
+      display: inline-flex; align-items: center; gap: 7px;
+      border: 1px solid var(--line); border-radius: 999px;
+      background: var(--raise); color: var(--muted);
+      font: 500 13px "Golos Text", sans-serif;
+      padding: 8px 14px 8px 11px; cursor: pointer;
+      margin-bottom: 12px;
+      transition: transform 0.12s;
+    }
+    .back:active { transform: scale(0.96); }
+
+    .stage {
+      position: relative;
+      border-radius: 20px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55), 0 4px 16px rgba(0, 0, 0, 0.4);
+      animation: pop 0.35s both;
+      background: var(--raise);
+    }
+    .stage canvas { display: block; width: 100%; height: auto; }
+    .stage .veil {
+      position: absolute; inset: 0;
+      display: grid; place-items: center;
+      background: rgba(12, 10, 20, 0.66);
+      backdrop-filter: blur(3px);
+      color: var(--muted); font-size: 13px;
+      opacity: 0; pointer-events: none; transition: opacity 0.2s;
+    }
+    .stage .veil.on { opacity: 1; }
+
+    .presets {
+      display: flex; gap: 8px;
+      margin: 14px 0 16px;
+      overflow-x: auto;
+      scrollbar-width: none;
+      padding-bottom: 2px;
+    }
+    .presets::-webkit-scrollbar { display: none; }
+    .pill {
+      display: inline-flex; align-items: center; gap: 8px;
+      border: 1px solid var(--line); border-radius: 999px;
+      background: var(--raise); color: var(--muted);
+      font: 600 13px "Golos Text", sans-serif;
+      padding: 9px 15px; cursor: pointer; white-space: nowrap;
+      transition: border-color 0.2s, color 0.2s, background 0.2s, transform 0.12s;
+    }
+    .pill:active { transform: scale(0.95); }
+    .pill .sw { width: 12px; height: 12px; border-radius: 4px; }
+    .pill.active { border-color: var(--accent); color: var(--text); background: var(--accent-soft); }
+
+    .share {
+      width: 100%;
+      border: none; border-radius: 16px;
+      padding: 16px;
+      background: linear-gradient(120deg, var(--accent), var(--accent-deep));
+      color: #fff;
+      font: 700 14px Unbounded, sans-serif;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      cursor: pointer;
+      box-shadow: 0 10px 28px rgba(255, 92, 122, 0.30);
+      transition: transform 0.12s, opacity 0.2s;
+    }
+    .share:active { transform: scale(0.98); }
+    .share:disabled { opacity: 0.55; cursor: default; }
+    .hint { color: var(--faint); font-size: 12px; text-align: center; margin-top: 10px; }
+
+    .toast {
+      position: fixed; left: 50%; bottom: 24px; translate: -50% 0;
+      background: var(--raise-2); border: 1px solid var(--line);
+      color: var(--text); font-size: 13px;
+      border-radius: 999px; padding: 10px 18px;
+      opacity: 0; pointer-events: none;
+      transition: opacity 0.25s, transform 0.25s;
+      transform: translateY(8px);
+      z-index: 60;
+      max-width: 88vw; text-align: center;
+    }
+    .toast.show { opacity: 1; transform: none; }
+
+    @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+    @keyframes pop { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+    @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -40% 0; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <span class="mark">Shiki<em>·</em>Cards</span>
+      <span class="dot"></span>
+      <span class="tag">карточки аниме</span>
+    </header>
+
+    <div class="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.2-3.2"></path>
+      </svg>
+      <input id="search" placeholder="Название аниме…" autocomplete="off" autofocus />
+    </div>
+
+    <div class="list" id="results"></div>
+  </div>
+
+  <div class="preview" id="preview">
+    <div class="inner">
+      <button class="back" id="backBtn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+        Назад к поиску
+      </button>
+      <div class="stage">
+        <canvas id="canvas" width="720" height="1080"></canvas>
+        <div class="veil" id="veil">Рендерю…</div>
+      </div>
+      <div class="presets" id="presets"></div>
+      <button class="share" id="shareBtn">Отправить карточку</button>
+      <div class="hint">Карточка рендерится на устройстве и улетает в инлайн-режим</div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const tg = window.Telegram?.WebApp;
+    tg?.ready();
+    tg?.expand();
+    tg?.setHeaderColor?.('#0c0a14');
+    tg?.setBackgroundColor?.('#0c0a14');
+
+    const PRESETS = [
+      { id: 'classic',  name: 'Классика', sw: 'linear-gradient(135deg,#0c0a14,#3a3550)' },
+      { id: 'rose',     name: 'Роза',     sw: 'linear-gradient(135deg,#ff5c7a,#7a1430)' },
+      { id: 'polaroid', name: 'Полароид', sw: 'linear-gradient(135deg,#f4efe6,#cabfa9)' },
+      { id: 'noir',     name: 'Нуар',     sw: 'linear-gradient(135deg,#000,#5a5a5a)' },
+    ];
+
+    const $ = (id) => document.getElementById(id);
+    const input = $('search');
+    const results = $('results');
+    const preview = $('preview');
+    const canvas = $('canvas');
+    const ctx = canvas.getContext('2d');
+    const veil = $('veil');
+    const shareBtn = $('shareBtn');
+    const toast = $('toast');
+
+    let activePreset = 'classic';
+    let selected = null;
+    let searchTimer = null;
+    let renderSeq = 0;
+    let toastTimer = null;
+    const imageCache = new Map();
+
+    const fontsReady = Promise.all([
+      document.fonts.load('900 56px Unbounded'),
+      document.fonts.load('700 44px Unbounded'),
+      document.fonts.load('600 28px "Golos Text"'),
+      document.fonts.load('500 24px "Golos Text"'),
+    ]).catch(() => {});
+
+    /* ---------- helpers ---------- */
+
+    function showToast(text) {
+      toast.textContent = text;
+      toast.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.remove('show'), 2600);
+    }
+
+    function proxyUrl(url) {
+      return `/api/image?url=${encodeURIComponent(url)}`;
+    }
+
+    function loadImage(url) {
+      if (imageCache.has(url)) return imageCache.get(url);
+      const promise = new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => resolve(img);
+        img.onerror = () => { imageCache.delete(url); reject(new Error('image load failed')); };
+        img.src = proxyUrl(url);
+      });
+      imageCache.set(url, promise);
+      return promise;
+    }
+
+    function metaLine(anime) {
+      const parts = [];
+      if (anime.year) parts.push(String(anime.year));
+      if (anime.kind) parts.push(String(anime.kind).toUpperCase());
+      if (anime.episodes) parts.push(`${anime.episodes} эп.`);
+      return parts.join(' · ');
+    }
+
+    function stateBlock(face, text) {
+      results.innerHTML = '';
+      const div = document.createElement('div');
+      div.className = 'state';
+      const f = document.createElement('span');
+      f.className = 'face';
+      f.textContent = face;
+      div.appendChild(f);
+      div.appendChild(document.createTextNode(text));
+      results.appendChild(div);
+    }
+
+    function skeletons(n) {
+      results.innerHTML = '';
+      for (let i = 0; i < n; i++) {
+        const s = document.createElement('div');
+        s.className = 'skel';
+        s.style.animationDelay = `${i * 70}ms`;
+        results.appendChild(s);
+      }
+    }
+
+    /* ---------- search ---------- */
+
+    async function search() {
+      const q = input.value.trim();
+      if (q.length < 2) {
+        stateBlock('(˶ᵔ ᵕ ᵔ˶)', 'Введи название аниме — хотя бы две буквы');
+        return;
+      }
+      skeletons(4);
+      try {
+        const response = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+        if (!response.ok) throw new Error('search failed');
+        const items = (await response.json()).filter((a) => a.image_url);
+        if (q !== input.value.trim()) return; // stale response
+        if (!items.length) {
+          stateBlock('¯\\_(ツ)_/¯', 'Ничего не нашлось. Попробуй другое название');
+          return;
+        }
+        results.innerHTML = '';
+        items.forEach((anime, i) => {
+          const row = document.createElement('button');
+          row.className = 'row';
+          row.style.animationDelay = `${i * 45}ms`;
+
+          const img = document.createElement('img');
+          img.loading = 'lazy';
+          img.alt = '';
+          img.src = proxyUrl(anime.image_url);
+
+          const body = document.createElement('div');
+          const title = document.createElement('div');
+          title.className = 't';
+          title.textContent = anime.title;
+
+          const meta = document.createElement('div');
+          meta.className = 'm';
+          if (anime.score) {
+            const star = document.createElement('span');
+            star.className = 'star';
+            star.textContent = `★ ${anime.score}`;
+            meta.appendChild(star);
+            meta.appendChild(document.createTextNode('  ·  '));
+          }
+          meta.appendChild(document.createTextNode(metaLine(anime)));
+
+          body.appendChild(title);
+          body.appendChild(meta);
+          if (anime.genres?.length) {
+            const g = document.createElement('div');
+            g.className = 'g';
+            g.textContent = anime.genres.slice(0, 3).join(' · ');
+            body.appendChild(g);
+          }
+
+          row.appendChild(img);
+          row.appendChild(body);
+          row.onclick = () => pick(anime);
+          results.appendChild(row);
+        });
+      } catch (_) {
+        stateBlock('(×_×)', 'Поиск сломался. Попробуй ещё раз');
+      }
+    }
+
+    /* ---------- canvas render ---------- */
+
+    function roundRectPath(c, x, y, w, h, r) {
+      if (c.roundRect) { c.beginPath(); c.roundRect(x, y, w, h, r); return; }
+      c.beginPath();
+      c.moveTo(x + r, y);
+      c.arcTo(x + w, y, x + w, y + h, r);
+      c.arcTo(x + w, y + h, x, y + h, r);
+      c.arcTo(x, y + h, x, y, r);
+      c.arcTo(x, y, x + w, y, r);
+      c.closePath();
+    }
+
+    function wrapText(c, text, maxWidth, maxLines) {
+      const words = String(text || '').split(/\s+/).filter(Boolean);
+      const lines = [];
+      let current = '';
+      for (const word of words) {
+        const candidate = `${current} ${word}`.trim();
+        if (current && c.measureText(candidate).width > maxWidth) {
+          lines.push(current);
+          current = word;
+          if (lines.length === maxLines) break;
+        } else {
+          current = candidate;
+        }
+      }
+      if (current && lines.length < maxLines) lines.push(current);
+      if (lines.length === maxLines && words.join(' ') !== lines.join(' ')) {
+        let last = lines[maxLines - 1];
+        while (last && c.measureText(last + '…').width > maxWidth) last = last.slice(0, -1);
+        lines[maxLines - 1] = last + '…';
+      }
+      return lines;
+    }
+
+    function drawCover(c, img, x, y, w, h, filter) {
+      const scale = Math.max(w / img.width, h / img.height);
+      const sw = w / scale, sh = h / scale;
+      const sx = (img.width - sw) / 2, sy = (img.height - sh) / 2;
+      if (filter) c.filter = filter;
+      c.drawImage(img, sx, sy, sw, sh, x, y, w, h);
+      c.filter = 'none';
+    }
+
+    function drawScoreBadge(c, score, color) {
+      if (!score) return;
+      c.font = '600 30px "Golos Text", system-ui, sans-serif';
+      const text = `★ ${score}`;
+      const w = c.measureText(text).width + 44;
+      const x = 720 - w - 28, y = 28, h = 54;
+      roundRectPath(c, x, y, w, h, 27);
+      c.fillStyle = 'rgba(10, 8, 16, 0.62)';
+      c.fill();
+      c.strokeStyle = 'rgba(255, 255, 255, 0.22)';
+      c.lineWidth = 2;
+      c.stroke();
+      c.textBaseline = 'middle';
+      c.fillStyle = color || '#ffc24b';
+      c.fillText(text, x + 22, y + h / 2 + 2);
+      c.textBaseline = 'alphabetic';
+    }
+
+    function drawChips(c, items, x, y, style) {
+      let cx = x;
+      c.font = '500 24px "Golos Text", system-ui, sans-serif';
+      for (const item of items) {
+        const w = c.measureText(item).width + 36;
+        if (cx + w > 720 - 36) break;
+        roundRectPath(c, cx, y, w, 44, 22);
+        c.fillStyle = style.bg;
+        c.fill();
+        if (style.stroke) { c.strokeStyle = style.stroke; c.lineWidth = 2; c.stroke(); }
+        c.textBaseline = 'middle';
+        c.fillStyle = style.text;
+        c.fillText(item, cx + 18, y + 24);
+        c.textBaseline = 'alphabetic';
+        cx += w + 10;
+      }
+    }
+
+    async function renderCard(anime, preset) {
+      const seq = ++renderSeq;
+      veil.classList.add('on');
+      try {
+        const [img] = await Promise.all([loadImage(anime.image_url), fontsReady]);
+        if (seq !== renderSeq) return;
+
+        const W = 720, H = 1080;
+        ctx.clearRect(0, 0, W, H);
+        const meta = metaLine(anime);
+        const genres = (anime.genres || []).slice(0, 3);
+
+        if (preset === 'polaroid') {
+          ctx.fillStyle = '#f4efe6';
+          ctx.fillRect(0, 0, W, H);
+          ctx.save();
+          roundRectPath(ctx, 26, 26, W - 52, 800, 14);
+          ctx.clip();
+          drawCover(ctx, img, 26, 26, W - 52, 800);
+          ctx.restore();
+
+          ctx.fillStyle = '#211b16';
+          ctx.font = '700 42px Unbounded, system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          let y = 886;
+          for (const line of wrapText(ctx, anime.title, W - 90, 2)) {
+            ctx.fillText(line, W / 2, y);
+            y += 54;
+          }
+          ctx.font = '500 25px "Golos Text", system-ui, sans-serif';
+          ctx.fillStyle = '#8a7f72';
+          const tail = [anime.score ? `★ ${anime.score}` : '', meta].filter(Boolean).join('   ·   ');
+          if (tail) { ctx.fillText(tail, W / 2, y + 8); y += 42; }
+          if (genres.length) {
+            ctx.font = '500 22px "Golos Text", system-ui, sans-serif';
+            ctx.fillStyle = '#b0a596';
+            ctx.fillText(genres.join(' · '), W / 2, y + 6);
+          }
+          ctx.font = '500 20px Unbounded, system-ui, sans-serif';
+          ctx.fillStyle = '#cabfa9';
+          ctx.fillText('shiki · cards', W / 2, H - 32);
+          ctx.textAlign = 'left';
+          return;
+        }
+
+        const noir = preset === 'noir';
+        const rose = preset === 'rose';
+        drawCover(ctx, img, 0, 0, W, H, noir ? 'grayscale(1) contrast(1.08) brightness(0.95)' : '');
+
+        const gh = 470;
+        const gradient = ctx.createLinearGradient(0, H - gh, 0, H);
+        if (rose) {
+          gradient.addColorStop(0, 'rgba(43, 10, 26, 0)');
+          gradient.addColorStop(1, 'rgba(43, 10, 26, 0.96)');
+        } else if (noir) {
+          gradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
+          gradient.addColorStop(1, 'rgba(0, 0, 0, 0.97)');
+        } else {
+          gradient.addColorStop(0, 'rgba(7, 5, 12, 0)');
+          gradient.addColorStop(1, 'rgba(7, 5, 12, 0.95)');
+        }
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, H - gh, W, gh);
+        if (rose) {
+          ctx.fillStyle = '#ff5c7a';
+          ctx.fillRect(0, H - gh + 60, 10, gh - 60);
+        }
+
+        drawScoreBadge(ctx, anime.score, noir ? '#ff5c7a' : '#ffc24b');
+
+        const x = rose ? 44 : 36;
+        ctx.textBaseline = 'top';
+        ctx.font = `900 ${noir ? 58 : 52}px Unbounded, system-ui, sans-serif`;
+        const titleLines = wrapText(ctx, noir ? anime.title.toUpperCase() : anime.title, W - x - 36, 3);
+        const lineStep = noir ? 72 : 66;
+        const blocks =
+          titleLines.length * lineStep +
+          (anime.name && anime.name !== anime.title ? 44 : 0) +
+          (meta ? 46 : 0) +
+          (genres.length ? 62 : 0) + 58;
+        let y = H - blocks - 28;
+
+        ctx.fillStyle = noir ? '#ff5c7a' : '#ffffff';
+        for (const line of titleLines) {
+          ctx.fillText(line, x, y);
+          y += lineStep;
+        }
+
+        if (anime.name && anime.name !== anime.title) {
+          ctx.font = '500 27px "Golos Text", system-ui, sans-serif';
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.72)';
+          ctx.fillText(wrapText(ctx, anime.name, W - x - 36, 1)[0] || '', x, y + 4);
+          y += 44;
+        }
+
+        if (meta) {
+          ctx.font = '600 26px "Golos Text", system-ui, sans-serif';
+          ctx.fillStyle = rose ? '#ffb3c2' : 'rgba(255, 255, 255, 0.85)';
+          ctx.fillText(meta, x, y + 8);
+          y += 46;
+        }
+
+        if (genres.length) {
+          drawChips(ctx, genres, x, y + 10, rose
+            ? { bg: 'rgba(255, 92, 122, 0.22)', stroke: 'rgba(255, 92, 122, 0.6)', text: '#ffd9e1' }
+            : { bg: 'rgba(255, 255, 255, 0.12)', stroke: 'rgba(255, 255, 255, 0.3)', text: '#f2eef9' });
+          y += 62;
+        }
+
+        ctx.font = '500 21px Unbounded, system-ui, sans-serif';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
+        ctx.fillText('shiki · cards', x, H - 52);
+        ctx.textBaseline = 'alphabetic';
+      } finally {
+        if (seq === renderSeq) veil.classList.remove('on');
+      }
+    }
+
+    /* ---------- preview flow ---------- */
+
+    function drawPresets() {
+      const box = $('presets');
+      box.innerHTML = '';
+      for (const preset of PRESETS) {
+        const pill = document.createElement('button');
+        pill.className = preset.id === activePreset ? 'pill active' : 'pill';
+        const sw = document.createElement('span');
+        sw.className = 'sw';
+        sw.style.background = preset.sw;
+        pill.appendChild(sw);
+        pill.appendChild(document.createTextNode(preset.name));
+        pill.onclick = () => {
+          if (activePreset === preset.id) return;
+          activePreset = preset.id;
+          tg?.HapticFeedback?.selectionChanged?.();
+          drawPresets();
+          if (selected) renderCard(selected, activePreset).catch(() => showToast('Не удалось отрендерить'));
+        };
+        box.appendChild(pill);
+      }
+    }
+
+    async function pick(anime) {
+      selected = anime;
+      tg?.HapticFeedback?.impactOccurred?.('light');
+      preview.classList.add('open');
+      tg?.BackButton?.show?.();
+      shareBtn.disabled = false;
+      shareBtn.textContent = 'Отправить карточку';
+      renderCard(anime, activePreset).catch(() => showToast('Не удалось загрузить постер'));
+
+      if (anime.source === 'shikimori' && !(anime.genres || []).length) {
+        try {
+          const response = await fetch(`/api/anime/${anime.id}/genres?source=shikimori`);
+          const data = await response.json();
+          if (data.genres?.length && selected === anime) {
+            anime.genres = data.genres;
+            renderCard(anime, activePreset).catch(() => {});
+          }
+        } catch (_) { /* genres are optional */ }
+      }
+    }
+
+    function closePreview() {
+      preview.classList.remove('open');
+      tg?.BackButton?.hide?.();
+      selected = null;
+      renderSeq++;
+    }
+
+    async function share() {
+      if (!selected) return;
+      shareBtn.disabled = true;
+      shareBtn.textContent = 'Загружаю…';
+      try {
+        const image = canvas.toDataURL('image/jpeg', 0.88);
+        const response = await fetch('/api/rendered', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            image,
+            meta: { title: selected.title, subtitle: selected.name, url: selected.page_url },
+          }),
+        });
+        const data = await response.json();
+        if (!data.ok) throw new Error(data.error || 'upload failed');
+        tg?.HapticFeedback?.notificationOccurred?.('success');
+        if (tg?.switchInlineQuery) {
+          tg.switchInlineQuery(data.query, ['users', 'groups', 'channels']);
+        } else {
+          await navigator.clipboard?.writeText(data.query);
+          showToast(`Скопировано: ${data.query}`);
+        }
+      } catch (_) {
+        showToast('Не получилось отправить, попробуй ещё раз');
+        tg?.HapticFeedback?.notificationOccurred?.('error');
+      } finally {
+        shareBtn.disabled = false;
+        shareBtn.textContent = 'Отправить карточку';
+      }
+    }
+
+    /* ---------- wiring ---------- */
+
+    input.addEventListener('input', () => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(search, 350);
+    });
+    $('backBtn').onclick = closePreview;
+    tg?.BackButton?.onClick?.(closePreview);
+    shareBtn.onclick = share;
+
+    drawPresets();
+    const initialQuery = new URLSearchParams(window.location.search).get('q') || '';
+    if (initialQuery) {
+      input.value = initialQuery;
+      search();
+    } else {
+      stateBlock('(˶ᵔ ᵕ ᵔ˶)', 'Введи название аниме — хотя бы две буквы');
+    }
+  </script>
+</body>
+</html>
