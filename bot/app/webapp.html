@@ -457,7 +457,8 @@
       eps: 'эп.',
       stOngoing: 'онгоинг',
       stAnons: 'анонс',
-      presets: { classic: 'Классика', rose: 'Роза', polaroid: 'Полароид', noir: 'Нуар' },
+      presets: { classic: 'Классика', glass: 'Стекло', neon: 'Неон', vhs: 'VHS', manga: 'Манга', mag: 'Журнал', rose: 'Роза', polaroid: 'Полароид', noir: 'Нуар' },
+      exclusive: 'ЭКСКЛЮЗИВ',
     } : {
       tagline: 'anime cards',
       placeholder: 'Anime title…',
@@ -489,11 +490,17 @@
       eps: 'ep.',
       stOngoing: 'airing',
       stAnons: 'soon',
-      presets: { classic: 'Classic', rose: 'Rose', polaroid: 'Polaroid', noir: 'Noir' },
+      presets: { classic: 'Classic', glass: 'Glass', neon: 'Neon', vhs: 'VHS', manga: 'Manga', mag: 'Cover', rose: 'Rose', polaroid: 'Polaroid', noir: 'Noir' },
+      exclusive: 'EXCLUSIVE',
     };
 
     const PRESETS = [
       { id: 'classic',  sw: 'linear-gradient(135deg,#0c0a14,#3a3550)' },
+      { id: 'glass',    sw: 'linear-gradient(135deg,rgba(255,255,255,0.75),rgba(255,255,255,0.18))' },
+      { id: 'neon',     sw: 'linear-gradient(135deg,#22d3ee,#ff2ec4)' },
+      { id: 'vhs',      sw: 'repeating-linear-gradient(0deg,#101010 0 2px,#3a3a3a 2px 4px)' },
+      { id: 'manga',    sw: 'linear-gradient(135deg,#f6f2e9 60%,#e11d48 60%)' },
+      { id: 'mag',      sw: 'linear-gradient(135deg,#ffe34d,#e11d48)' },
       { id: 'rose',     sw: 'linear-gradient(135deg,#ff5c7a,#7a1430)' },
       { id: 'polaroid', sw: 'linear-gradient(135deg,#f4efe6,#cabfa9)' },
       { id: 'noir',     sw: 'linear-gradient(135deg,#000,#5a5a5a)' },
@@ -815,12 +822,12 @@
       c.filter = 'none';
     }
 
-    function drawScoreBadge(c, score, color) {
+    function drawScoreBadge(c, score, color, yTop = 28) {
       if (!score) return;
       c.font = '600 30px "Golos Text", system-ui, sans-serif';
       const text = `★ ${score}`;
       const w = c.measureText(text).width + 44;
-      const x = 720 - w - 28, y = 28, h = 54;
+      const x = 720 - w - 28, y = yTop, h = 54;
       roundRectPath(c, x, y, w, h, 27);
       c.fillStyle = 'rgba(10, 8, 16, 0.62)';
       c.fill();
@@ -851,6 +858,14 @@
       }
     }
 
+    function seededRand(seed) {
+      let s = (seed >>> 0) || 1;
+      return () => {
+        s = (s * 1664525 + 1013904223) >>> 0;
+        return s / 4294967296;
+      };
+    }
+
     async function renderCard(anime, preset) {
       const seq = ++renderSeq;
       veil.classList.add('on');
@@ -858,124 +873,499 @@
         const posterUrl = selectedPoster || anime.image_url;
         const [img] = await Promise.all([loadImage(posterUrl), fontsReady]);
         if (seq !== renderSeq) return;
-
-        const W = 720, H = 1080;
-        ctx.clearRect(0, 0, W, H);
-        const cardTitle = displayTitle(anime);
-        const subtitle = titleLang !== 'orig' && hasTwoTitles(anime) ? anime.name : '';
-        const meta = metaLine(anime);
-        const genres = opts.genres ? (anime.genres || []).slice(0, 3) : [];
-        const score = opts.score ? anime.score : null;
-
-        if (preset === 'polaroid') {
-          ctx.fillStyle = '#f4efe6';
-          ctx.fillRect(0, 0, W, H);
-          ctx.save();
-          roundRectPath(ctx, 26, 26, W - 52, 800, 14);
-          ctx.clip();
-          drawCover(ctx, img, 26, 26, W - 52, 800);
-          ctx.restore();
-
-          ctx.fillStyle = '#211b16';
-          ctx.font = '700 42px Unbounded, system-ui, sans-serif';
-          ctx.textAlign = 'center';
-          let y = 886;
-          for (const line of wrapText(ctx, cardTitle, W - 90, 2)) {
-            ctx.fillText(line, W / 2, y);
-            y += 54;
-          }
-          ctx.font = '500 25px "Golos Text", system-ui, sans-serif';
-          ctx.fillStyle = '#8a7f72';
-          const tail = [score ? `★ ${score}` : '', meta].filter(Boolean).join('   ·   ');
-          if (tail) { ctx.fillText(tail, W / 2, y + 8); y += 42; }
-          if (genres.length) {
-            ctx.font = '500 22px "Golos Text", system-ui, sans-serif';
-            ctx.fillStyle = '#b0a596';
-            ctx.fillText(genres.join(' · '), W / 2, y + 6);
-          }
-          if (opts.mark) {
-            ctx.font = '500 20px Unbounded, system-ui, sans-serif';
-            ctx.fillStyle = '#cabfa9';
-            ctx.fillText('shiki · cards', W / 2, H - 32);
-          }
-          ctx.textAlign = 'left';
-          return;
-        }
-
-        const noir = preset === 'noir';
-        const rose = preset === 'rose';
-        drawCover(ctx, img, 0, 0, W, H, noir ? 'grayscale(1) contrast(1.08) brightness(0.95)' : '');
-
-        const gh = 470;
-        const gradient = ctx.createLinearGradient(0, H - gh, 0, H);
-        if (rose) {
-          gradient.addColorStop(0, 'rgba(43, 10, 26, 0)');
-          gradient.addColorStop(1, 'rgba(43, 10, 26, 0.96)');
-        } else if (noir) {
-          gradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
-          gradient.addColorStop(1, 'rgba(0, 0, 0, 0.97)');
-        } else {
-          gradient.addColorStop(0, 'rgba(7, 5, 12, 0)');
-          gradient.addColorStop(1, 'rgba(7, 5, 12, 0.95)');
-        }
-        ctx.fillStyle = gradient;
-        ctx.fillRect(0, H - gh, W, gh);
-        if (rose) {
-          ctx.fillStyle = '#ff5c7a';
-          ctx.fillRect(0, H - gh + 60, 10, gh - 60);
-        }
-
-        drawScoreBadge(ctx, score, noir ? '#ff5c7a' : '#ffc24b');
-
-        const x = rose ? 44 : 36;
-        ctx.textBaseline = 'top';
-        ctx.font = `900 ${noir ? 58 : 52}px Unbounded, system-ui, sans-serif`;
-        const titleLines = wrapText(ctx, noir ? cardTitle.toUpperCase() : cardTitle, W - x - 36, 3);
-        const lineStep = noir ? 72 : 66;
-        const blocks =
-          titleLines.length * lineStep +
-          (subtitle ? 44 : 0) +
-          (meta ? 46 : 0) +
-          (genres.length ? 62 : 0) +
-          (opts.mark ? 58 : 26);
-        let y = H - blocks - 28;
-
-        ctx.fillStyle = noir ? '#ff5c7a' : '#ffffff';
-        for (const line of titleLines) {
-          ctx.fillText(line, x, y);
-          y += lineStep;
-        }
-
-        if (subtitle) {
-          ctx.font = '500 27px "Golos Text", system-ui, sans-serif';
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.72)';
-          ctx.fillText(wrapText(ctx, subtitle, W - x - 36, 1)[0] || '', x, y + 4);
-          y += 44;
-        }
-
-        if (meta) {
-          ctx.font = '600 26px "Golos Text", system-ui, sans-serif';
-          ctx.fillStyle = rose ? '#ffb3c2' : 'rgba(255, 255, 255, 0.85)';
-          ctx.fillText(meta, x, y + 8);
-          y += 46;
-        }
-
-        if (genres.length) {
-          drawChips(ctx, genres, x, y + 10, rose
-            ? { bg: 'rgba(255, 92, 122, 0.22)', stroke: 'rgba(255, 92, 122, 0.6)', text: '#ffd9e1' }
-            : { bg: 'rgba(255, 255, 255, 0.12)', stroke: 'rgba(255, 255, 255, 0.3)', text: '#f2eef9' });
-          y += 62;
-        }
-
-        if (opts.mark) {
-          ctx.font = '500 21px Unbounded, system-ui, sans-serif';
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
-          ctx.fillText('shiki · cards', x, H - 52);
-        }
-        ctx.textBaseline = 'alphabetic';
+        ctx.clearRect(0, 0, 720, 1080);
+        const card = {
+          img,
+          title: displayTitle(anime),
+          subtitle: titleLang !== 'orig' && hasTwoTitles(anime) ? anime.name : '',
+          meta: metaLine(anime),
+          genres: opts.genres ? (anime.genres || []).slice(0, 3) : [],
+          score: opts.score ? anime.score : null,
+          id: anime.id,
+        };
+        const renderers = {
+          polaroid: renderPolaroid,
+          glass: renderGlass,
+          neon: renderNeon,
+          vhs: renderVhs,
+          manga: renderManga,
+          mag: renderMagazine,
+        };
+        (renderers[preset] || renderGradient)(card, preset);
       } finally {
         if (seq === renderSeq) veil.classList.remove('on');
       }
+    }
+
+    function renderGradient(card, preset) {
+      const W = 720, H = 1080;
+      const noir = preset === 'noir';
+      const rose = preset === 'rose';
+      drawCover(ctx, card.img, 0, 0, W, H, noir ? 'grayscale(1) contrast(1.08) brightness(0.95)' : '');
+
+      const gh = 470;
+      const gradient = ctx.createLinearGradient(0, H - gh, 0, H);
+      if (rose) {
+        gradient.addColorStop(0, 'rgba(43, 10, 26, 0)');
+        gradient.addColorStop(1, 'rgba(43, 10, 26, 0.96)');
+      } else if (noir) {
+        gradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
+        gradient.addColorStop(1, 'rgba(0, 0, 0, 0.97)');
+      } else {
+        gradient.addColorStop(0, 'rgba(7, 5, 12, 0)');
+        gradient.addColorStop(1, 'rgba(7, 5, 12, 0.95)');
+      }
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, H - gh, W, gh);
+      if (rose) {
+        ctx.fillStyle = '#ff5c7a';
+        ctx.fillRect(0, H - gh + 60, 10, gh - 60);
+      }
+
+      drawScoreBadge(ctx, card.score, noir ? '#ff5c7a' : '#ffc24b');
+
+      const x = rose ? 44 : 36;
+      ctx.textBaseline = 'top';
+      ctx.font = `900 ${noir ? 58 : 52}px Unbounded, system-ui, sans-serif`;
+      const titleLines = wrapText(ctx, noir ? card.title.toUpperCase() : card.title, W - x - 36, 3);
+      const lineStep = noir ? 72 : 66;
+      const blocks =
+        titleLines.length * lineStep +
+        (card.subtitle ? 44 : 0) +
+        (card.meta ? 46 : 0) +
+        (card.genres.length ? 62 : 0) +
+        (opts.mark ? 58 : 26);
+      let y = H - blocks - 28;
+
+      ctx.fillStyle = noir ? '#ff5c7a' : '#ffffff';
+      for (const line of titleLines) {
+        ctx.fillText(line, x, y);
+        y += lineStep;
+      }
+
+      if (card.subtitle) {
+        ctx.font = '500 27px "Golos Text", system-ui, sans-serif';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.72)';
+        ctx.fillText(wrapText(ctx, card.subtitle, W - x - 36, 1)[0] || '', x, y + 4);
+        y += 44;
+      }
+
+      if (card.meta) {
+        ctx.font = '600 26px "Golos Text", system-ui, sans-serif';
+        ctx.fillStyle = rose ? '#ffb3c2' : 'rgba(255, 255, 255, 0.85)';
+        ctx.fillText(card.meta, x, y + 8);
+        y += 46;
+      }
+
+      if (card.genres.length) {
+        drawChips(ctx, card.genres, x, y + 10, rose
+          ? { bg: 'rgba(255, 92, 122, 0.22)', stroke: 'rgba(255, 92, 122, 0.6)', text: '#ffd9e1' }
+          : { bg: 'rgba(255, 255, 255, 0.12)', stroke: 'rgba(255, 255, 255, 0.3)', text: '#f2eef9' });
+        y += 62;
+      }
+
+      if (opts.mark) {
+        ctx.font = '500 21px Unbounded, system-ui, sans-serif';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
+        ctx.fillText('shiki · cards', x, H - 52);
+      }
+      ctx.textBaseline = 'alphabetic';
+    }
+
+    function renderPolaroid(card) {
+      const W = 720, H = 1080;
+      ctx.fillStyle = '#f4efe6';
+      ctx.fillRect(0, 0, W, H);
+      ctx.save();
+      roundRectPath(ctx, 26, 26, W - 52, 800, 14);
+      ctx.clip();
+      drawCover(ctx, card.img, 26, 26, W - 52, 800);
+      ctx.restore();
+
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillStyle = '#211b16';
+      ctx.font = '700 42px Unbounded, system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      let y = 886;
+      for (const line of wrapText(ctx, card.title, W - 90, 2)) {
+        ctx.fillText(line, W / 2, y);
+        y += 54;
+      }
+      ctx.font = '500 25px "Golos Text", system-ui, sans-serif';
+      ctx.fillStyle = '#8a7f72';
+      const tail = [card.score ? `★ ${card.score}` : '', card.meta].filter(Boolean).join('   ·   ');
+      if (tail) { ctx.fillText(tail, W / 2, y + 8); y += 42; }
+      if (card.genres.length) {
+        ctx.font = '500 22px "Golos Text", system-ui, sans-serif';
+        ctx.fillStyle = '#b0a596';
+        ctx.fillText(card.genres.join(' · '), W / 2, y + 6);
+      }
+      if (opts.mark) {
+        ctx.font = '500 20px Unbounded, system-ui, sans-serif';
+        ctx.fillStyle = '#cabfa9';
+        ctx.fillText('shiki · cards', W / 2, H - 32);
+      }
+      ctx.textAlign = 'left';
+    }
+
+    function renderGlass(card) {
+      const W = 720, H = 1080;
+      drawCover(ctx, card.img, 0, 0, W, H);
+
+      ctx.font = '800 44px Unbounded, system-ui, sans-serif';
+      const lines = wrapText(ctx, card.title, 624, 2);
+      const ph = 26 + lines.length * 56 +
+        (card.subtitle ? 38 : 0) + (card.meta ? 42 : 0) +
+        (card.genres.length ? 66 : 0) + (opts.mark ? 34 : 0) + 22;
+      const py = H - 20 - ph;
+
+      ctx.save();
+      roundRectPath(ctx, 20, py, W - 40, ph, 24);
+      ctx.clip();
+      drawCover(ctx, card.img, 0, 0, W, H, 'blur(26px) saturate(1.15)');
+      ctx.fillStyle = 'rgba(20, 16, 30, 0.40)';
+      ctx.fillRect(20, py, W - 40, ph);
+      ctx.restore();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+      ctx.lineWidth = 1.5;
+      roundRectPath(ctx, 20, py, W - 40, ph, 24);
+      ctx.stroke();
+
+      drawScoreBadge(ctx, card.score, '#ffc24b');
+
+      const x = 48;
+      ctx.textBaseline = 'top';
+      let y = py + 26;
+      ctx.font = '800 44px Unbounded, system-ui, sans-serif';
+      ctx.fillStyle = '#ffffff';
+      for (const line of lines) { ctx.fillText(line, x, y); y += 56; }
+      if (card.subtitle) {
+        ctx.font = '500 24px "Golos Text", system-ui, sans-serif';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.70)';
+        ctx.fillText(wrapText(ctx, card.subtitle, 624, 1)[0] || '', x, y + 4);
+        y += 38;
+      }
+      if (card.meta) {
+        ctx.font = '600 24px "Golos Text", system-ui, sans-serif';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+        ctx.fillText(card.meta, x, y + 6);
+        y += 42;
+      }
+      if (card.genres.length) {
+        drawChips(ctx, card.genres, x, y + 6, {
+          bg: 'rgba(255, 255, 255, 0.14)', stroke: 'rgba(255, 255, 255, 0.35)', text: '#ffffff',
+        });
+        y += 66;
+      }
+      if (opts.mark) {
+        ctx.font = '500 19px Unbounded, system-ui, sans-serif';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.fillText('shiki · cards', x, y + 8);
+      }
+      ctx.textBaseline = 'alphabetic';
+    }
+
+    function renderNeon(card) {
+      const W = 720, H = 1080;
+      drawCover(ctx, card.img, 0, 0, W, H);
+
+      const wash = ctx.createLinearGradient(0, 0, W, H);
+      wash.addColorStop(0, 'rgba(34, 211, 238, 0.30)');
+      wash.addColorStop(1, 'rgba(255, 46, 196, 0.32)');
+      ctx.globalCompositeOperation = 'overlay';
+      ctx.fillStyle = wash;
+      ctx.fillRect(0, 0, W, H);
+      ctx.globalCompositeOperation = 'source-over';
+
+      const g = ctx.createLinearGradient(0, H - 470, 0, H);
+      g.addColorStop(0, 'rgba(16, 3, 30, 0)');
+      g.addColorStop(1, 'rgba(16, 3, 30, 0.96)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, H - 470, W, 470);
+
+      ctx.save();
+      ctx.strokeStyle = '#22d3ee';
+      ctx.lineWidth = 3;
+      ctx.shadowColor = '#22d3ee';
+      ctx.shadowBlur = 18;
+      roundRectPath(ctx, 18, 18, W - 36, H - 36, 22);
+      ctx.stroke();
+      ctx.restore();
+
+      drawScoreBadge(ctx, card.score, '#22d3ee', 44);
+
+      const x = 44;
+      ctx.textBaseline = 'top';
+      ctx.font = '900 52px Unbounded, system-ui, sans-serif';
+      const lines = wrapText(ctx, card.title, W - x - 44, 3);
+      const blocks = lines.length * 66 + (card.meta ? 46 : 0) +
+        (card.genres.length ? 62 : 0) + (opts.mark ? 58 : 26);
+      let y = H - blocks - 40;
+
+      ctx.save();
+      ctx.shadowColor = '#ff2ec4';
+      ctx.shadowBlur = 26;
+      ctx.fillStyle = '#ffffff';
+      for (const line of lines) {
+        ctx.fillText(line, x, y);
+        ctx.fillText(line, x, y);
+        y += 66;
+      }
+      ctx.restore();
+      ctx.textBaseline = 'top';
+
+      if (card.meta) {
+        ctx.font = '600 26px "Golos Text", system-ui, sans-serif';
+        ctx.fillStyle = '#7ee7f5';
+        ctx.fillText(card.meta, x + 2, y + 8);
+        y += 46;
+      }
+      if (card.genres.length) {
+        drawChips(ctx, card.genres, x + 2, y + 10, {
+          bg: 'rgba(34, 211, 238, 0.12)', stroke: 'rgba(34, 211, 238, 0.55)', text: '#bdf3fb',
+        });
+        y += 62;
+      }
+      if (opts.mark) {
+        ctx.font = '500 21px Unbounded, system-ui, sans-serif';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.fillText('shiki · cards', x + 2, H - 60);
+      }
+      ctx.textBaseline = 'alphabetic';
+    }
+
+    function renderVhs(card) {
+      const W = 720, H = 1080;
+      drawCover(ctx, card.img, 0, 0, W, H, 'saturate(1.25) contrast(1.06)');
+
+      const v = ctx.createRadialGradient(W / 2, H / 2, H * 0.25, W / 2, H / 2, H * 0.75);
+      v.addColorStop(0, 'rgba(0, 0, 0, 0)');
+      v.addColorStop(1, 'rgba(0, 0, 0, 0.38)');
+      ctx.fillStyle = v;
+      ctx.fillRect(0, 0, W, H);
+
+      const g = ctx.createLinearGradient(0, H - 430, 0, H);
+      g.addColorStop(0, 'rgba(0, 0, 0, 0)');
+      g.addColorStop(1, 'rgba(0, 0, 0, 0.92)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, H - 430, W, 430);
+
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.16)';
+      for (let sy = 0; sy < H; sy += 6) ctx.fillRect(0, sy, W, 2);
+
+      const mono = 'ui-monospace, Menlo, Consolas, monospace';
+      ctx.textBaseline = 'top';
+      ctx.font = `700 30px ${mono}`;
+      ctx.fillStyle = '#d8ffd8';
+      ctx.fillText('▶ PLAY', 36, 38);
+      ctx.fillStyle = '#ff3b30';
+      ctx.beginPath();
+      ctx.arc(W - 150, 53, 9, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#ffd7d4';
+      ctx.fillText('REC', W - 130, 38);
+
+      drawScoreBadge(ctx, card.score, '#a7f3a0', 96);
+
+      const x = 36;
+      ctx.font = '900 52px Unbounded, system-ui, sans-serif';
+      const lines = wrapText(ctx, card.title.toUpperCase(), W - x - 36, 3);
+      const blocks = lines.length * 66 + (card.meta ? 44 : 0) +
+        (card.genres.length ? 40 : 0) + 64;
+      let y = H - blocks - 34;
+      for (const line of lines) {
+        ctx.fillStyle = 'rgba(255, 40, 90, 0.85)';
+        ctx.fillText(line, x - 3, y);
+        ctx.fillStyle = 'rgba(0, 255, 235, 0.85)';
+        ctx.fillText(line, x + 3, y);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(line, x, y);
+        y += 66;
+      }
+      if (card.meta) {
+        ctx.font = `600 26px ${mono}`;
+        ctx.fillStyle = '#d8ffd8';
+        ctx.fillText(card.meta, x + 2, y + 6);
+        y += 44;
+      }
+      if (card.genres.length) {
+        ctx.font = `500 24px ${mono}`;
+        ctx.fillStyle = 'rgba(216, 255, 216, 0.8)';
+        ctx.fillText(card.genres.join(' / '), x + 2, y + 4);
+        y += 40;
+      }
+      ctx.font = `600 26px ${mono}`;
+      ctx.fillStyle = 'rgba(216, 255, 216, 0.9)';
+      ctx.fillText(`TAPE #${card.id}  0:00:00`, x + 2, H - 58);
+      if (opts.mark) {
+        ctx.textAlign = 'right';
+        ctx.fillStyle = 'rgba(216, 255, 216, 0.6)';
+        ctx.fillText('SHIKI·CARDS', W - 36, H - 58);
+        ctx.textAlign = 'left';
+      }
+      ctx.textBaseline = 'alphabetic';
+    }
+
+    function renderManga(card) {
+      const W = 720, H = 1080;
+      ctx.fillStyle = '#f6f2e9';
+      ctx.fillRect(0, 0, W, H);
+
+      ctx.strokeStyle = 'rgba(20, 16, 12, 0.8)';
+      for (let i = 0; i < 16; i++) {
+        const a = Math.PI * 0.5 + (i / 16) * Math.PI * 0.5;
+        ctx.lineWidth = 1 + (i % 3);
+        ctx.beginPath();
+        ctx.moveTo(W + 10, -10);
+        ctx.lineTo(W + 10 + Math.cos(a) * 320, -10 + Math.sin(a) * 320);
+        ctx.stroke();
+      }
+
+      if (opts.mark) {
+        ctx.textBaseline = 'top';
+        ctx.textAlign = 'center';
+        ctx.font = '700 20px Unbounded, system-ui, sans-serif';
+        ctx.fillStyle = '#14100c';
+        ctx.fillText('SHIKI · CARDS', W / 2, 34);
+        ctx.textAlign = 'left';
+      }
+
+      const px = 28, py = 96, pw = W - 56, ph = 680;
+      ctx.save();
+      roundRectPath(ctx, px, py, pw, ph, 6);
+      ctx.clip();
+      drawCover(ctx, card.img, px, py, pw, ph, 'grayscale(1) contrast(1.22)');
+      ctx.fillStyle = 'rgba(20, 16, 12, 0.10)';
+      for (let dy = py + ph - 170; dy < py + ph; dy += 12) {
+        for (let dx = px + ((Math.round(dy / 12) % 2) ? 6 : 0); dx < px + pw; dx += 12) {
+          ctx.beginPath();
+          ctx.arc(dx, dy, 2.1, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      ctx.restore();
+      ctx.lineWidth = 10;
+      ctx.strokeStyle = '#14100c';
+      roundRectPath(ctx, px, py, pw, ph, 6);
+      ctx.stroke();
+
+      if (card.score) {
+        ctx.save();
+        ctx.translate(92, 152);
+        ctx.rotate(-0.18);
+        ctx.beginPath();
+        ctx.arc(0, 0, 56, 0, Math.PI * 2);
+        ctx.fillStyle = '#e11d48';
+        ctx.fill();
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '800 28px "Golos Text", system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`★ ${card.score}`, 0, 0);
+        ctx.restore();
+        ctx.textAlign = 'left';
+      }
+
+      ctx.textBaseline = 'top';
+      ctx.font = '900 48px Unbounded, system-ui, sans-serif';
+      let y = 812;
+      for (const line of wrapText(ctx, card.title, W - 72, 2)) {
+        ctx.fillStyle = '#e11d48';
+        ctx.fillText(line, 40, y + 4);
+        ctx.fillStyle = '#14100c';
+        ctx.fillText(line, 36, y);
+        y += 60;
+      }
+      if (card.meta) {
+        ctx.font = '600 25px "Golos Text", system-ui, sans-serif';
+        ctx.fillStyle = '#5b544a';
+        ctx.fillText(card.meta, 38, y + 6);
+        y += 44;
+      }
+      if (card.genres.length) {
+        drawChips(ctx, card.genres, 38, y + 10, {
+          bg: '#f6f2e9', stroke: '#14100c', text: '#14100c',
+        });
+      }
+      ctx.textBaseline = 'alphabetic';
+    }
+
+    function renderMagazine(card) {
+      const W = 720, H = 1080;
+      drawCover(ctx, card.img, 0, 0, W, H);
+
+      const tgrad = ctx.createLinearGradient(0, 0, 0, 260);
+      tgrad.addColorStop(0, 'rgba(0, 0, 0, 0.55)');
+      tgrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = tgrad;
+      ctx.fillRect(0, 0, W, 260);
+
+      ctx.textBaseline = 'top';
+      ctx.textAlign = 'center';
+      ctx.font = '900 96px Unbounded, system-ui, sans-serif';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText('SHIKI', W / 2, 28);
+      ctx.font = '700 18px Unbounded, system-ui, sans-serif';
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+      ctx.fillText('C A R D S  M A G A Z I N E', W / 2, 138);
+      ctx.textAlign = 'left';
+
+      const bgrad = ctx.createLinearGradient(0, H - 520, 0, H);
+      bgrad.addColorStop(0, 'rgba(0, 0, 0, 0)');
+      bgrad.addColorStop(1, 'rgba(0, 0, 0, 0.94)');
+      ctx.fillStyle = bgrad;
+      ctx.fillRect(0, H - 520, W, 520);
+
+      ctx.font = '900 54px Unbounded, system-ui, sans-serif';
+      const lines = wrapText(ctx, card.title, W - 80, 3);
+      const blocks = 54 + lines.length * 68 + (card.genres.length ? 58 : 0);
+      let y = H - 130 - blocks;
+
+      const tagText = T.exclusive;
+      ctx.font = '800 22px "Golos Text", system-ui, sans-serif';
+      const tw = ctx.measureText(tagText).width + 28;
+      ctx.fillStyle = '#e11d48';
+      ctx.fillRect(36, y, tw, 38);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(tagText, 50, y + 8);
+      y += 54;
+
+      ctx.font = '900 54px Unbounded, system-ui, sans-serif';
+      ctx.fillStyle = '#ffe34d';
+      for (const line of lines) {
+        ctx.fillText(line, 36, y);
+        y += 68;
+      }
+      if (card.genres.length) {
+        drawChips(ctx, card.genres, 36, y + 6, {
+          bg: 'rgba(255, 255, 255, 0.14)', stroke: 'rgba(255, 255, 255, 0.4)', text: '#ffffff',
+        });
+      }
+
+      if (card.meta) {
+        ctx.font = '600 24px "Golos Text", system-ui, sans-serif';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.fillText(card.meta, 36, H - 96);
+      }
+
+      if (opts.mark) {
+        const bx = W - 36 - 150, by = H - 36 - 66;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(bx, by, 150, 66);
+        const rand = seededRand(card.id);
+        ctx.fillStyle = '#111111';
+        let barX = bx + 10;
+        while (barX < bx + 138) {
+          const bw = 2 + rand() * 4;
+          ctx.fillRect(barX, by + 8, bw, 30);
+          barX += bw + 2 + rand() * 3;
+        }
+        ctx.font = '600 13px "Golos Text", system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('shiki · cards', bx + 75, by + 45);
+        ctx.textAlign = 'left';
+      }
+      ctx.textBaseline = 'alphabetic';
     }
 
     function rerender() {
