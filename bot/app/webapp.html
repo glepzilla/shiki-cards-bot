@@ -1780,7 +1780,7 @@
       syncClear();
       clearTimeout(searchTimer);
       if (!input.value.trim()) { idle(); return; }
-      searchTimer = setTimeout(search, 350);
+      searchTimer = setTimeout(search, 500);
     });
     clearBtn.onclick = () => {
       input.value = '';

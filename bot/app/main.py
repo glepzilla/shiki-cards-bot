@@ -108,9 +108,7 @@ class Anime:
         images = (raw.get("images") or {}).get("jpg") or {}
         kind = raw.get("type")
         score = raw.get("score")
-        genres = tuple(
-            str(genre["name"]) for genre in raw.get("genres") or [] if genre.get("name")
-        )
+        genres = tuple(str(genre["name"]) for genre in raw.get("genres") or [] if genre.get("name"))
         return cls(
             id=int(raw["mal_id"]),
             name=str(raw.get("title") or "Untitled"),
@@ -152,6 +150,60 @@ class TTLCache[T]:
             self._entries.popitem(last=False)
 
 
+class Throttle:
+    """Min interval between calls to one upstream host — their rate limits are strict
+    (Shikimori 5 rps, Jikan 3 rps), and a fast typer easily bursts past them."""
+
+    def __init__(self, interval: float) -> None:
+        self._interval = interval
+        self._lock = asyncio.Lock()
+        self._last = 0.0
+
+    async def wait(self) -> None:
+        async with self._lock:
+            delay = self._last + self._interval - monotonic()
+            if delay > 0:
+                await asyncio.sleep(delay)
+            self._last = monotonic()
+
+
+THROTTLES = {
+    "shikimori.one": Throttle(0.35),
+    "api.jikan.moe": Throttle(0.5),
+    "graphql.anilist.co": Throttle(0.35),
+}
+
+
+async def fetch_json(
+    session: ClientSession,
+    url: str,
+    *,
+    params: dict[str, str] | None = None,
+    json_payload: dict[str, Any] | None = None,
+) -> Any:
+    """GET/POST JSON with per-host throttling and a single retry on 429."""
+    throttle = THROTTLES.get(urlparse(url).netloc)
+    headers = {"User-Agent": USER_AGENT}
+    method = "POST" if json_payload is not None else "GET"
+    for attempt in (0, 1):
+        if throttle:
+            await throttle.wait()
+        async with session.request(
+            method, url, params=params, json=json_payload, headers=headers
+        ) as resp:
+            if resp.status == 429 and attempt == 0:
+                try:
+                    delay = float(resp.headers.get("Retry-After") or 1.0)
+                except ValueError:
+                    delay = 1.0
+                logging.warning("429 from %s, retrying in %.1fs", url, delay)
+                await asyncio.sleep(min(delay, 3.0))
+                continue
+            resp.raise_for_status()
+            return await resp.json()
+    raise RuntimeError("unreachable")
+
+
 def absolute_url(path: str | None) -> str | None:
     if not path:
         return None
@@ -169,20 +221,13 @@ def allowed_link(url: str) -> bool:
 
 async def search_shikimori(session: ClientSession, query: str) -> list[Anime]:
     params = {"search": query, "limit": "10", "order": "popularity"}
-    headers = {"User-Agent": USER_AGENT}
-    url = f"{SHIKIMORI_ORIGIN}/api/animes"
-    async with session.get(url, params=params, headers=headers) as resp:
-        resp.raise_for_status()
-        data = await resp.json()
+    data = await fetch_json(session, f"{SHIKIMORI_ORIGIN}/api/animes", params=params)
     return [Anime.from_shikimori(item) for item in data]
 
 
 async def search_jikan(session: ClientSession, query: str) -> list[Anime]:
     params = {"q": query, "limit": "10", "order_by": "members", "sort": "desc", "sfw": "true"}
-    headers = {"User-Agent": USER_AGENT}
-    async with session.get(f"{JIKAN_API}/anime", params=params, headers=headers) as resp:
-        resp.raise_for_status()
-        data = await resp.json()
+    data = await fetch_json(session, f"{JIKAN_API}/anime", params=params)
     return [Anime.from_jikan(item) for item in data.get("data") or []]
 
 
@@ -216,46 +261,31 @@ async def search_anime(
 
 
 async def fetch_shikimori_genres(session: ClientSession, anime_id: int) -> list[str]:
-    headers = {"User-Agent": USER_AGENT}
-    url = f"{SHIKIMORI_ORIGIN}/api/animes/{anime_id}"
-    async with session.get(url, headers=headers) as resp:
-        resp.raise_for_status()
-        data = await resp.json()
+    data = await fetch_json(session, f"{SHIKIMORI_ORIGIN}/api/animes/{anime_id}")
     genres = [
-        str(genre.get("russian") or genre.get("name") or "")
-        for genre in data.get("genres") or []
+        str(genre.get("russian") or genre.get("name") or "") for genre in data.get("genres") or []
     ]
     return [genre for genre in genres if genre][:4]
 
 
-async def trending_anime(
-    session: ClientSession, cache: TTLCache[list[Anime]]
-) -> list[Anime]:
+async def trending_anime(session: ClientSession, cache: TTLCache[list[Anime]]) -> list[Anime]:
     """Top-ranked currently airing shows for the webapp idle screen."""
     cached = cache.get("__trending__")
     if cached is not None:
         return cached
 
     animes: list[Anime] = []
-    headers = {"User-Agent": USER_AGENT}
     try:
         params = {"limit": "10", "order": "ranked", "status": "ongoing"}
-        async with session.get(
-            f"{SHIKIMORI_ORIGIN}/api/animes", params=params, headers=headers
-        ) as resp:
-            resp.raise_for_status()
-            animes = [Anime.from_shikimori(item) for item in await resp.json()]
+        data = await fetch_json(session, f"{SHIKIMORI_ORIGIN}/api/animes", params=params)
+        animes = [Anime.from_shikimori(item) for item in data]
     except Exception:
         logging.warning("Shikimori trending failed, trying Jikan", exc_info=True)
 
     if not animes:
         try:
             params = {"filter": "airing", "limit": "10"}
-            async with session.get(
-                f"{JIKAN_API}/top/anime", params=params, headers=headers
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+            data = await fetch_json(session, f"{JIKAN_API}/top/anime", params=params)
             animes = [Anime.from_jikan(item) for item in data.get("data") or []]
         except Exception:
             logging.warning("Jikan trending fallback failed", exc_info=True)
@@ -266,10 +296,7 @@ async def trending_anime(
 
 
 async def fetch_jikan_pictures(session: ClientSession, mal_id: int) -> list[tuple[str, str]]:
-    headers = {"User-Agent": USER_AGENT}
-    async with session.get(f"{JIKAN_API}/anime/{mal_id}/pictures", headers=headers) as resp:
-        resp.raise_for_status()
-        data = await resp.json()
+    data = await fetch_json(session, f"{JIKAN_API}/anime/{mal_id}/pictures")
     pairs: list[tuple[str, str]] = []
     for item in data.get("data") or []:
         jpg = item.get("jpg") or {}
@@ -283,10 +310,7 @@ async def fetch_jikan_pictures(session: ClientSession, mal_id: int) -> list[tupl
 async def fetch_anilist_cover(session: ClientSession, mal_id: int) -> list[tuple[str, str]]:
     query = "query($id:Int){Media(idMal:$id,type:ANIME){coverImage{extraLarge large}}}"
     payload = {"query": query, "variables": {"id": mal_id}}
-    headers = {"User-Agent": USER_AGENT}
-    async with session.post(ANILIST_API, json=payload, headers=headers) as resp:
-        resp.raise_for_status()
-        data = await resp.json()
+    data = await fetch_json(session, ANILIST_API, json_payload=payload)
     cover = ((data.get("data") or {}).get("Media") or {}).get("coverImage") or {}
     url = cover.get("extraLarge") or cover.get("large")
     thumb = cover.get("large") or cover.get("extraLarge")
@@ -412,7 +436,7 @@ def load_card_meta(settings: Settings, card_id: str) -> dict[str, Any]:
     try:
         loaded = json.loads(meta_path.read_text())
         return loaded if isinstance(loaded, dict) else {}
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return {}
 
 
@@ -546,7 +570,7 @@ def build_router(
                         thumbnail_url=image_url,
                         title=str(meta.get("title") or "Shiki Card"),
                         description="Готовая карточка из WebApp" if ru else "Card from the WebApp",
-                        caption=card_caption(meta),
+                        # caption=card_caption(meta),
                         parse_mode="HTML",
                         reply_markup=card_markup(meta),
                     )
@@ -688,9 +712,7 @@ async def create_web_app(
 
         card_id = uuid4().hex
         (settings.rendered_dir / f"{card_id}.jpg").write_bytes(raw)
-        (settings.rendered_dir / f"{card_id}.json").write_text(
-            json.dumps(meta, ensure_ascii=False)
-        )
+        (settings.rendered_dir / f"{card_id}.json").write_text(json.dumps(meta, ensure_ascii=False))
         cleanup_rendered_dir(settings)
         return web.json_response({"ok": True, "id": card_id, "query": f"card:{card_id}"})
 
