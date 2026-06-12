@@ -43,6 +43,21 @@
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
       z-index: 50;
     }
+    .aurora {
+      position: fixed; inset: -20%;
+      pointer-events: none;
+      z-index: 0;
+      background:
+        radial-gradient(34% 26% at 18% 12%, rgba(255, 92, 122, 0.16), transparent 70%),
+        radial-gradient(38% 30% at 86% 30%, rgba(124, 92, 255, 0.14), transparent 70%),
+        radial-gradient(30% 24% at 30% 92%, rgba(45, 212, 191, 0.10), transparent 70%);
+      animation: drift 22s ease-in-out infinite alternate;
+    }
+    .wrap, .preview { position: relative; z-index: 1; }
+    @keyframes drift {
+      from { transform: translate3d(0, 0, 0) scale(1); }
+      to { transform: translate3d(2%, -2.5%, 0) scale(1.07); }
+    }
 
     .wrap {
       padding: 16px 16px calc(28px + env(safe-area-inset-bottom));
@@ -50,23 +65,35 @@
     }
 
     /* ---------- header ---------- */
-    header { display: flex; align-items: baseline; gap: 10px; margin: 2px 2px 14px; animation: rise 0.5s both; }
+    header { display: flex; align-items: center; gap: 9px; margin: 4px 2px 16px; animation: rise 0.5s both; }
+    header .spark { width: 17px; height: 17px; color: var(--accent); filter: drop-shadow(0 0 6px rgba(255, 92, 122, 0.7)); }
     .mark {
       font-family: Unbounded, sans-serif;
       font-weight: 900;
-      font-size: 15px;
-      letter-spacing: 0.18em;
+      font-size: 17px;
+      letter-spacing: 0.14em;
       text-transform: uppercase;
     }
-    .mark em { font-style: normal; color: var(--accent); }
-    .dot {
-      width: 7px; height: 7px; border-radius: 50%;
-      background: var(--accent);
-      box-shadow: 0 0 10px var(--accent);
-      animation: pulse 2.2s infinite;
-      align-self: center;
+    .mark em {
+      font-style: normal;
+      background: linear-gradient(100deg, var(--accent), #9a7bff);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
     }
-    .tag { color: var(--faint); font-size: 12px; margin-left: auto; }
+    .tag {
+      color: var(--faint);
+      font-size: 10px;
+      margin-left: auto;
+      font-family: Unbounded, sans-serif;
+      font-weight: 500;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 6px 11px;
+      background: rgba(22, 19, 31, 0.6);
+    }
 
     /* ---------- search ---------- */
     .search { position: relative; animation: rise 0.5s 0.06s both; }
@@ -77,12 +104,14 @@
     .search input {
       width: 100%;
       border: 1px solid var(--line);
-      border-radius: 16px;
-      padding: 15px 44px 15px 46px;
-      background: var(--raise);
+      border-radius: 18px;
+      padding: 16px 44px 16px 46px;
+      background: linear-gradient(180deg, rgba(29, 25, 41, 0.9), rgba(22, 19, 31, 0.9));
       color: var(--text);
       font: 500 16px "Golos Text", sans-serif;
       outline: none;
+      caret-color: var(--accent);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
       transition: border-color 0.2s, box-shadow 0.2s;
     }
     .search input::placeholder { color: var(--faint); }
@@ -131,12 +160,20 @@
       transition: transform 0.12s, border-color 0.2s, background 0.2s;
     }
     .row:active { transform: scale(0.98); border-color: var(--accent); background: var(--raise-2); }
-    .row img { width: 56px; height: 80px; object-fit: cover; border-radius: 10px; background: var(--raise-2); }
-    .row .t { font-weight: 700; font-size: 15px; line-height: 1.25; margin-bottom: 3px; }
-    .row .m { color: var(--muted); font-size: 12.5px; line-height: 1.4; }
-    .row .m .star { color: var(--amber); }
-    .row .m .st { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin: 0 5px 1px 0; }
-    .row .g { color: var(--faint); font-size: 11.5px; margin-top: 2px; }
+    .row img { width: 60px; height: 84px; object-fit: cover; border-radius: 12px; background: var(--raise-2); }
+    .row .t { font-weight: 700; font-size: 15px; line-height: 1.25; margin-bottom: 5px; }
+    .row .m { color: var(--muted); font-size: 12.5px; line-height: 1.5; display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
+    .row .m .star {
+      color: var(--amber);
+      background: rgba(255, 194, 75, 0.12);
+      border: 1px solid rgba(255, 194, 75, 0.25);
+      border-radius: 999px;
+      padding: 1px 8px 2px;
+      font-size: 11.5px;
+      font-weight: 600;
+    }
+    .row .m .st { display: inline-block; width: 7px; height: 7px; border-radius: 50%; }
+    .row .g { color: var(--faint); font-size: 11.5px; margin-top: 3px; }
 
     .state {
       color: var(--muted);
@@ -205,7 +242,10 @@
       border-radius: 20px;
       overflow: hidden;
       border: 1px solid var(--line);
-      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55), 0 4px 16px rgba(0, 0, 0, 0.4);
+      box-shadow:
+        0 24px 60px rgba(0, 0, 0, 0.55),
+        0 4px 16px rgba(0, 0, 0, 0.4),
+        0 18px 80px rgba(255, 92, 122, 0.14);
       animation: pop 0.35s both;
       background: var(--raise);
       cursor: zoom-in;
@@ -240,13 +280,22 @@
     }
 
     .label {
+      display: flex;
+      align-items: center;
+      gap: 10px;
       font-family: Unbounded, sans-serif;
       font-weight: 700;
       font-size: 10.5px;
       letter-spacing: 0.16em;
       text-transform: uppercase;
       color: var(--faint);
-      margin: 16px 2px 8px;
+      margin: 18px 2px 9px;
+    }
+    .label::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: linear-gradient(90deg, var(--line), transparent);
     }
     .posters {
       display: flex; gap: 8px;
@@ -258,7 +307,7 @@
     .thumb {
       position: relative;
       flex: 0 0 auto;
-      width: 56px; height: 80px;
+      width: 64px; height: 92px;
       border: 2px solid var(--line);
       border-radius: 10px;
       padding: 0;
@@ -288,24 +337,27 @@
     }
 
     .presets {
-      display: flex; gap: 8px;
+      display: flex; flex-wrap: wrap; gap: 8px;
       margin: 0 0 4px;
-      overflow-x: auto;
-      scrollbar-width: none;
-      padding-bottom: 2px;
     }
-    .presets::-webkit-scrollbar { display: none; }
     .pill {
       display: inline-flex; align-items: center; gap: 8px;
       border: 1px solid var(--line); border-radius: 999px;
       background: var(--raise); color: var(--muted);
       font: 600 13px "Golos Text", sans-serif;
-      padding: 9px 15px; cursor: pointer; white-space: nowrap;
+      padding: 10px 16px; cursor: pointer; white-space: nowrap;
       transition: border-color 0.2s, color 0.2s, background 0.2s, transform 0.12s;
     }
     .pill:active { transform: scale(0.95); }
-    .pill .sw { width: 12px; height: 12px; border-radius: 4px; }
-    .pill.active { border-color: var(--accent); color: var(--text); background: var(--accent-soft); }
+    .pill .sw {
+      width: 13px; height: 13px; border-radius: 5px;
+      box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18) inset;
+    }
+    .pill.active {
+      border-color: var(--accent); color: var(--text);
+      background: var(--accent-soft);
+      box-shadow: 0 0 14px rgba(255, 92, 122, 0.18);
+    }
 
     .actions { display: grid; gap: 10px; margin-top: 16px; }
     .share {
@@ -363,10 +415,14 @@
   </style>
 </head>
 <body>
+  <div class="aurora" aria-hidden="true"></div>
   <div class="wrap">
     <header>
-      <span class="mark">Shiki<em>·</em>Cards</span>
-      <span class="dot"></span>
+      <svg class="spark" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M12 2c.6 4.8 2.4 7.2 7.5 8-5.1.8-6.9 3.2-7.5 8-.6-4.8-2.4-7.2-7.5-8 5.1-.8 6.9-3.2 7.5-8z"/>
+        <path d="M19 14.5c.3 2.2 1.1 3.3 3 3.7-1.9.4-2.7 1.5-3 3.7-.3-2.2-1.1-3.3-3-3.7 1.9-.4 2.7-1.5 3-3.7z" opacity="0.7"/>
+      </svg>
+      <span class="mark">Shiki<em>·Cards</em></span>
       <span class="tag" id="tagline"></span>
     </header>
 
@@ -457,7 +513,7 @@
       eps: 'эп.',
       stOngoing: 'онгоинг',
       stAnons: 'анонс',
-      presets: { classic: 'Классика', glass: 'Стекло', neon: 'Неон', vhs: 'VHS', manga: 'Манга', mag: 'Журнал', rose: 'Роза', polaroid: 'Полароид', noir: 'Нуар' },
+      presets: { classic: 'Классика', aurora: 'Аврора', glass: 'Стекло', neon: 'Неон', vhs: 'VHS', manga: 'Манга', mag: 'Журнал', polaroid: 'Полароид', print: 'Принт' },
       exclusive: 'ЭКСКЛЮЗИВ',
     } : {
       tagline: 'anime cards',
@@ -490,20 +546,20 @@
       eps: 'ep.',
       stOngoing: 'airing',
       stAnons: 'soon',
-      presets: { classic: 'Classic', glass: 'Glass', neon: 'Neon', vhs: 'VHS', manga: 'Manga', mag: 'Cover', rose: 'Rose', polaroid: 'Polaroid', noir: 'Noir' },
+      presets: { classic: 'Classic', aurora: 'Aurora', glass: 'Glass', neon: 'Neon', vhs: 'VHS', manga: 'Manga', mag: 'Cover', polaroid: 'Polaroid', print: 'Print' },
       exclusive: 'EXCLUSIVE',
     };
 
     const PRESETS = [
       { id: 'classic',  sw: 'linear-gradient(135deg,#0c0a14,#3a3550)' },
+      { id: 'aurora',   sw: 'linear-gradient(135deg,#ff5c7a,#7c5cff 55%,#2dd4bf)' },
       { id: 'glass',    sw: 'linear-gradient(135deg,rgba(255,255,255,0.75),rgba(255,255,255,0.18))' },
       { id: 'neon',     sw: 'linear-gradient(135deg,#22d3ee,#ff2ec4)' },
       { id: 'vhs',      sw: 'repeating-linear-gradient(0deg,#101010 0 2px,#3a3a3a 2px 4px)' },
       { id: 'manga',    sw: 'linear-gradient(135deg,#f6f2e9 60%,#e11d48 60%)' },
       { id: 'mag',      sw: 'linear-gradient(135deg,#ffe34d,#e11d48)' },
-      { id: 'rose',     sw: 'linear-gradient(135deg,#ff5c7a,#7a1430)' },
       { id: 'polaroid', sw: 'linear-gradient(135deg,#f4efe6,#cabfa9)' },
-      { id: 'noir',     sw: 'linear-gradient(135deg,#000,#5a5a5a)' },
+      { id: 'print',    sw: 'linear-gradient(135deg,#efe9dd 55%,#2a2118 55%)' },
     ];
     const STATUS_DOT = {
       ongoing: { color: '#4ade80', label: T.stOngoing },
@@ -675,14 +731,13 @@
         st.className = 'st';
         st.style.background = status.color;
         meta.appendChild(st);
-        meta.appendChild(document.createTextNode(`${status.label}  ·  `));
+        meta.appendChild(document.createTextNode(status.label));
       }
       if (anime.score) {
         const star = document.createElement('span');
         star.className = 'star';
         star.textContent = `★ ${anime.score}`;
         meta.appendChild(star);
-        meta.appendChild(document.createTextNode('  ·  '));
       }
       meta.appendChild(document.createTextNode(metaLine(anime)));
 
@@ -890,57 +945,44 @@
           vhs: renderVhs,
           manga: renderManga,
           mag: renderMagazine,
+          aurora: renderAurora,
+          print: renderPrint,
         };
-        (renderers[preset] || renderGradient)(card, preset);
+        (renderers[preset] || renderClassic)(card);
       } finally {
         if (seq === renderSeq) veil.classList.remove('on');
       }
     }
 
-    function renderGradient(card, preset) {
+    function renderClassic(card) {
       const W = 720, H = 1080;
-      const noir = preset === 'noir';
-      const rose = preset === 'rose';
-      drawCover(ctx, card.img, 0, 0, W, H, noir ? 'grayscale(1) contrast(1.08) brightness(0.95)' : '');
+      drawCover(ctx, card.img, 0, 0, W, H);
 
       const gh = 470;
       const gradient = ctx.createLinearGradient(0, H - gh, 0, H);
-      if (rose) {
-        gradient.addColorStop(0, 'rgba(43, 10, 26, 0)');
-        gradient.addColorStop(1, 'rgba(43, 10, 26, 0.96)');
-      } else if (noir) {
-        gradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
-        gradient.addColorStop(1, 'rgba(0, 0, 0, 0.97)');
-      } else {
-        gradient.addColorStop(0, 'rgba(7, 5, 12, 0)');
-        gradient.addColorStop(1, 'rgba(7, 5, 12, 0.95)');
-      }
+      gradient.addColorStop(0, 'rgba(7, 5, 12, 0)');
+      gradient.addColorStop(1, 'rgba(7, 5, 12, 0.95)');
       ctx.fillStyle = gradient;
       ctx.fillRect(0, H - gh, W, gh);
-      if (rose) {
-        ctx.fillStyle = '#ff5c7a';
-        ctx.fillRect(0, H - gh + 60, 10, gh - 60);
-      }
 
-      drawScoreBadge(ctx, card.score, noir ? '#ff5c7a' : '#ffc24b');
+      drawScoreBadge(ctx, card.score, '#ffc24b');
 
-      const x = rose ? 44 : 36;
+      const x = 36;
       ctx.textBaseline = 'top';
-      ctx.font = `900 ${noir ? 58 : 52}px Unbounded, system-ui, sans-serif`;
-      const titleLines = wrapText(ctx, noir ? card.title.toUpperCase() : card.title, W - x - 36, 3);
-      const lineStep = noir ? 72 : 66;
+      ctx.font = '900 52px Unbounded, system-ui, sans-serif';
+      const titleLines = wrapText(ctx, card.title, W - x - 36, 3);
       const blocks =
-        titleLines.length * lineStep +
+        titleLines.length * 66 +
         (card.subtitle ? 44 : 0) +
         (card.meta ? 46 : 0) +
         (card.genres.length ? 62 : 0) +
         (opts.mark ? 58 : 26);
       let y = H - blocks - 28;
 
-      ctx.fillStyle = noir ? '#ff5c7a' : '#ffffff';
+      ctx.fillStyle = '#ffffff';
       for (const line of titleLines) {
         ctx.fillText(line, x, y);
-        y += lineStep;
+        y += 66;
       }
 
       if (card.subtitle) {
@@ -952,15 +994,15 @@
 
       if (card.meta) {
         ctx.font = '600 26px "Golos Text", system-ui, sans-serif';
-        ctx.fillStyle = rose ? '#ffb3c2' : 'rgba(255, 255, 255, 0.85)';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
         ctx.fillText(card.meta, x, y + 8);
         y += 46;
       }
 
       if (card.genres.length) {
-        drawChips(ctx, card.genres, x, y + 10, rose
-          ? { bg: 'rgba(255, 92, 122, 0.22)', stroke: 'rgba(255, 92, 122, 0.6)', text: '#ffd9e1' }
-          : { bg: 'rgba(255, 255, 255, 0.12)', stroke: 'rgba(255, 255, 255, 0.3)', text: '#f2eef9' });
+        drawChips(ctx, card.genres, x, y + 10, {
+          bg: 'rgba(255, 255, 255, 0.12)', stroke: 'rgba(255, 255, 255, 0.3)', text: '#f2eef9',
+        });
         y += 62;
       }
 
@@ -969,6 +1011,131 @@
         ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
         ctx.fillText('shiki · cards', x, H - 52);
       }
+      ctx.textBaseline = 'alphabetic';
+    }
+
+    function renderAurora(card) {
+      const W = 720, H = 1080;
+      ctx.fillStyle = '#13101e';
+      ctx.fillRect(0, 0, W, H);
+      const blob = (x, y, r, color) => {
+        const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+        g.addColorStop(0, color);
+        g.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, W, H);
+      };
+      blob(140, 150, 460, 'rgba(255, 92, 122, 0.50)');
+      blob(640, 420, 500, 'rgba(124, 92, 255, 0.45)');
+      blob(180, 980, 460, 'rgba(45, 212, 191, 0.35)');
+
+      const px = 70, py = 84, pw = W - 140, ph = 760;
+      ctx.save();
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.55)';
+      ctx.shadowBlur = 60;
+      ctx.shadowOffsetY = 26;
+      roundRectPath(ctx, px, py, pw, ph, 28);
+      ctx.fillStyle = '#0c0a14';
+      ctx.fill();
+      ctx.restore();
+      ctx.save();
+      roundRectPath(ctx, px, py, pw, ph, 28);
+      ctx.clip();
+      drawCover(ctx, card.img, px, py, pw, ph);
+      ctx.restore();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
+      ctx.lineWidth = 1.5;
+      roundRectPath(ctx, px, py, pw, ph, 28);
+      ctx.stroke();
+
+      drawScoreBadge(ctx, card.score, '#ffc24b');
+
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.font = '800 42px Unbounded, system-ui, sans-serif';
+      const lines = wrapText(ctx, card.title, W - 110, 2);
+      const blockH = lines.length * 52 + (card.meta ? 36 : 0) +
+        (card.genres.length ? 32 : 0) + (opts.mark ? 30 : 0);
+      let y = py + ph + ((H - py - ph) - blockH) / 2 + 4;
+      ctx.fillStyle = '#ffffff';
+      for (const line of lines) { ctx.fillText(line, W / 2, y); y += 52; }
+      if (card.meta) {
+        ctx.font = '600 24px "Golos Text", system-ui, sans-serif';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.80)';
+        ctx.fillText(card.meta, W / 2, y + 6);
+        y += 36;
+      }
+      if (card.genres.length) {
+        ctx.font = '500 21px "Golos Text", system-ui, sans-serif';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+        ctx.fillText(card.genres.join('  ·  '), W / 2, y + 4);
+        y += 32;
+      }
+      if (opts.mark) {
+        ctx.font = '500 17px Unbounded, system-ui, sans-serif';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.40)';
+        ctx.fillText('shiki · cards', W / 2, y + 6);
+      }
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
+    }
+
+    function renderPrint(card) {
+      const W = 720, H = 1080;
+      ctx.fillStyle = '#efe9dd';
+      ctx.fillRect(0, 0, W, H);
+      ctx.strokeStyle = '#2a2118';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(24, 24, W - 48, H - 48);
+
+      ctx.textBaseline = 'top';
+      ctx.letterSpacing = '4px';
+      if (opts.mark) {
+        ctx.font = '600 17px Unbounded, system-ui, sans-serif';
+        ctx.fillStyle = '#2a2118';
+        ctx.fillText('SHIKI · CARDS', 64, 50);
+      }
+      if (card.score) {
+        ctx.font = '600 20px "Golos Text", system-ui, sans-serif';
+        ctx.textAlign = 'right';
+        ctx.fillStyle = '#2a2118';
+        ctx.fillText(`★ ${card.score}`, W - 64, 50);
+        ctx.textAlign = 'left';
+      }
+      ctx.letterSpacing = '0px';
+
+      const px = 64, py = 92, pw = W - 128, ph = 690;
+      drawCover(ctx, card.img, px, py, pw, ph);
+      ctx.lineWidth = 2;
+      ctx.strokeRect(px, py, pw, ph);
+
+      const dy = py + ph + 36;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(px, dy);
+      ctx.lineTo(W - px, dy);
+      ctx.stroke();
+
+      ctx.font = '700 40px Unbounded, system-ui, sans-serif';
+      ctx.fillStyle = '#211b12';
+      let y = dy + 26;
+      for (const line of wrapText(ctx, card.title, W - 128, 2)) {
+        ctx.fillText(line, px, y);
+        y += 52;
+      }
+      ctx.letterSpacing = '3px';
+      if (card.meta) {
+        ctx.font = '600 20px "Golos Text", system-ui, sans-serif';
+        ctx.fillStyle = '#6b5f4d';
+        ctx.fillText(card.meta.toUpperCase(), px, y + 10);
+        y += 40;
+      }
+      if (card.genres.length) {
+        ctx.font = '500 18px "Golos Text", system-ui, sans-serif';
+        ctx.fillStyle = '#8d7f68';
+        ctx.fillText(card.genres.join(' • ').toUpperCase(), px, y + 6);
+      }
+      ctx.letterSpacing = '0px';
       ctx.textBaseline = 'alphabetic';
     }
 
