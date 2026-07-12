@@ -1,12 +1,20 @@
 services:
   bot:
-    build: .
+    image: ghcr.io/glepzilla/shiki-cards-bot:latest    # ← неймспейс орги!
+    restart: unless-stopped
     env_file: .env
-    ports:
-      - "8080:8080"
     volumes:
       - rendered:/app/.cache/rendered
-    restart: unless-stopped
+    networks: [proxy]
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.shiki.rule=Host(`shiki.glepzilla.ru`)
+      - traefik.http.routers.shiki.entrypoints=websecure
+      - traefik.http.services.shiki.loadbalancer.server.port=8080
 
 volumes:
   rendered:
+
+networks:
+  proxy:
+    external: true
