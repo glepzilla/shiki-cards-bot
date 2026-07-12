@@ -578,9 +578,11 @@ def build_router(
 
         if card_id:
             image_path = settings.rendered_dir / f"{card_id}.jpg"
-            if not image_path.exists():
+            if not image_path.is_file():
+                logging.warning("Inline card %s is missing from %s", card_id, image_path)
                 await answer([], cache_time=1)
                 return
+            logging.info("Serving inline card %s (%d bytes)", card_id, image_path.stat().st_size)
             meta = load_card_meta(settings, card_id)
             image_url = f"{settings.public_base_url.rstrip('/')}/rendered/{card_id}.jpg"
             await answer(
@@ -723,9 +725,16 @@ async def create_web_app(
         }
 
         card_id = uuid4().hex
-        (settings.rendered_dir / f"{card_id}.jpg").write_bytes(raw)
+        image_path = settings.rendered_dir / f"{card_id}.jpg"
+        image_path.write_bytes(raw)
         (settings.rendered_dir / f"{card_id}.json").write_text(json.dumps(meta, ensure_ascii=False))
         cleanup_rendered_dir(settings)
+        if not image_path.is_file():
+            logging.error("Rendered card %s was removed during cleanup", card_id)
+            return web.json_response(
+                {"ok": False, "error": "rendered card was removed"}, status=500
+            )
+        logging.info("Saved rendered card %s (%d bytes)", card_id, len(raw))
         return web.json_response({"ok": True, "id": card_id, "query": f"card:{card_id}"})
 
     app.router.add_get("/webapp", webapp_page)
