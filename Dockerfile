@@ -9,8 +9,8 @@ RUN apt-get update \
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 COPY bot ./
-RUN groupadd --system app \
-    && useradd --system --gid app --home-dir /app --shell /usr/sbin/nologin app \
+RUN groupadd --system --gid 10001 app \
+    && useradd --system --uid 10001 --gid app --home-dir /app --shell /usr/sbin/nologin app \
     && mkdir -p /app/.cache/rendered \
     && chown -R app:app /app
 USER app

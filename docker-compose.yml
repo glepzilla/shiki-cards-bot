@@ -1,7 +1,19 @@
 services:
+  rendered-permissions:
+    image: ghcr.io/glepzilla/shiki-cards-bot:latest
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["mkdir -p /app/.cache/rendered && chown -R 10001:10001 /app/.cache/rendered"]
+    volumes:
+      - rendered:/app/.cache/rendered
+    restart: "no"
+
   bot:
     image: ghcr.io/glepzilla/shiki-cards-bot:latest    # ← неймспейс орги!
     restart: unless-stopped
+    depends_on:
+      rendered-permissions:
+        condition: service_completed_successfully
     env_file: .env
     environment:
       # The proxy runs on the Docker host. It must listen on the Docker bridge,
