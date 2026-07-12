@@ -74,3 +74,31 @@ docker compose up --build
 uv run ruff check bot
 uv run mypy
 ```
+
+## Production proxy
+
+The production compose file routes Telegram and external API traffic through
+`http://host.docker.internal:7890`. Docker resolves this name to the host gateway.
+The host proxy must therefore listen on the Docker bridge gateway, not only on
+`127.0.0.1`. Find the gateway with:
+
+```bash
+docker network inspect bridge -f '{{(index .IPAM.Config 0).Gateway}}'
+```
+
+For a Clash/Mihomo proxy, set `bind-address` to that address (usually
+`172.17.0.1`) and keep `mixed-port: 7890`. Do not expose this port publicly.
+After changing its configuration, restart the proxy and deploy the bot:
+
+```bash
+docker compose pull
+docker compose up -d --force-recreate
+docker compose exec bot python - <<'PY'
+import os
+import urllib.request
+
+url = f"https://api.telegram.org/bot{os.environ['BOT_TOKEN']}/getMe"
+with urllib.request.urlopen(url, timeout=10) as response:
+    print(response.status)
+PY
+```

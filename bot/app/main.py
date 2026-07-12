@@ -15,6 +15,7 @@ from urllib.parse import urlencode, urlparse
 from uuid import uuid4
 
 from aiogram import Bot, Dispatcher, Router
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.filters import CommandStart
 from aiogram.types import (
     InlineKeyboardButton,
@@ -30,13 +31,13 @@ from aiogram.types import (
 from aiohttp import ClientSession, ClientTimeout, web
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-SHIKIMORI_ORIGIN = "https://shikimori.one"
+SHIKIMORI_ORIGIN = "https://shikimori.io"
 MAL_ORIGIN = "https://myanimelist.net"
 JIKAN_API = "https://api.jikan.moe/v4"
 ANILIST_API = "https://graphql.anilist.co"
 USER_AGENT = "shiki-cards-bot/0.2"
-ALLOWED_IMAGE_HOSTS = {"shikimori.one", "cdn.myanimelist.net", "s4.anilist.co"}
-ALLOWED_LINK_HOSTS = {"shikimori.one", "myanimelist.net"}
+ALLOWED_IMAGE_HOSTS = {"shikimori.io", "cdn.myanimelist.net", "s4.anilist.co"}
+ALLOWED_LINK_HOSTS = {"shikimori.io", "myanimelist.net"}
 
 JIKAN_STATUS = {
     "Currently Airing": "ongoing",
@@ -55,6 +56,7 @@ class Settings(BaseSettings):
     rendered_dir: Path = Path(".cache/rendered")
     rendered_max_mb: int = 256
     search_cache_ttl: int = 300
+    proxy_url: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -168,7 +170,7 @@ class Throttle:
 
 
 THROTTLES = {
-    "shikimori.one": Throttle(0.35),
+    "shikimori.io": Throttle(0.35),
     "api.jikan.moe": Throttle(0.5),
     "graphql.anilist.co": Throttle(0.35),
 }
@@ -735,8 +737,11 @@ async def main() -> None:
     cleanup_rendered_dir(settings)
     cache: TTLCache[list[Anime]] = TTLCache(ttl=settings.search_cache_ttl)
 
-    async with ClientSession(timeout=ClientTimeout(total=15)) as session:
-        bot = Bot(settings.bot_token)
+    async with ClientSession(
+        timeout=ClientTimeout(total=15), trust_env=settings.proxy_url is not None
+    ) as session:
+        bot_session = AiohttpSession(proxy=settings.proxy_url) if settings.proxy_url else None
+        bot = Bot(settings.bot_token, session=bot_session)
         dp = Dispatcher()
         dp.include_router(build_router(settings, session, cache))
 
