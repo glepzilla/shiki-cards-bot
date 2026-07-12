@@ -38,7 +38,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Decrypt secrets
-        run: sops -d .env.enc > .env
+        run: sops -d secrets.enc.env > .env
         env:
           SOPS_AGE_KEY_FILE: /home/runner/.config/sops/age/keys.txt
       - name: Deploy
