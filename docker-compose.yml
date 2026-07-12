@@ -15,6 +15,12 @@ services:
     volumes:
       - rendered:/app/.cache/rendered
     networks: [proxy]
+    healthcheck:
+      test: ["CMD", "/app/.venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3).read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     labels:
       - traefik.enable=true
       - traefik.http.routers.shiki.rule=Host(`shiki.glepzilla.ru`)

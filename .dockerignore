@@ -1,0 +1,14 @@
+.git
+.env
+.env.*
+!.env.example
+.venv
+.cache
+.mypy_cache
+.ruff_cache
+.pytest_cache
+.pi-subagents
+.claude
+__pycache__
+*.pyc
+secrets.enc.env

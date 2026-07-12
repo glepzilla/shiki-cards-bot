@@ -2,16 +2,19 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
+import hmac
 import html
 import json
 import logging
 import os
-from collections import OrderedDict
+import time
+from collections import OrderedDict, deque
 from dataclasses import dataclass
 from pathlib import Path
 from time import monotonic
 from typing import Any
-from urllib.parse import urlencode, urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse
 from uuid import uuid4
 
 from aiogram import Bot, Dispatcher, Router
@@ -19,9 +22,11 @@ from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import CommandStart
 from aiogram.types import (
+    BufferedInputFile,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     InlineQuery,
+    InlineQueryResultCachedPhoto,
     InlineQueryResultPhoto,
     InlineQueryResultsButton,
     InlineQueryResultUnion,
@@ -29,7 +34,7 @@ from aiogram.types import (
     Message,
     WebAppInfo,
 )
-from aiohttp import ClientSession, ClientTimeout, web
+from aiohttp import ClientError, ClientResponseError, ClientSession, ClientTimeout, web
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 SHIKIMORI_ORIGIN = "https://shikimori.io"
@@ -39,6 +44,8 @@ ANILIST_API = "https://graphql.anilist.co"
 USER_AGENT = "shiki-cards-bot/0.2"
 UPSTREAM_REQUEST_TIMEOUT = 4.0
 INLINE_SEARCH_TIMEOUT = 8.0
+MAX_RENDERED_IMAGE_BYTES = 5 * 1024 * 1024
+MAX_PROXY_IMAGE_BYTES = 5 * 1024 * 1024
 ALLOWED_IMAGE_HOSTS = {"shikimori.io", "cdn.myanimelist.net", "s4.anilist.co"}
 ALLOWED_LINK_HOSTS = {"shikimori.io", "myanimelist.net"}
 
@@ -59,7 +66,58 @@ class Settings(BaseSettings):
     rendered_dir: Path = Path(".cache/rendered")
     rendered_max_mb: int = 256
     search_cache_ttl: int = 300
+    rendered_uploads_per_hour: int = 30
+    storage_chat_id: int | str
+    webapp_auth_max_age: int = 86_400
     proxy_url: str | None = None
+
+
+def as_mapping(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def as_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def as_int(value: Any) -> int | None:
+    try:
+        return int(value) if value is not None and not isinstance(value, bool) else None
+    except (TypeError, ValueError):
+        return None
+
+
+def webapp_actor(init_data: str) -> str:
+    """Stable rate-limit key without trusting it for authentication."""
+    try:
+        user = json.loads(dict(parse_qsl(init_data, keep_blank_values=True)).get("user", ""))
+        user_id = as_mapping(user).get("id")
+        if user_id is not None:
+            return f"user:{user_id}"
+    except (TypeError, ValueError):
+        pass
+    return f"init:{hashlib.sha256(init_data.encode()).hexdigest()}"
+
+
+def validate_webapp_init_data(init_data: str, bot_token: str, max_age: int) -> bool:
+    """Verify Telegram WebApp initData and reject expired or malformed payloads."""
+    try:
+        pairs = dict(parse_qsl(init_data, keep_blank_values=True))
+        received_hash = pairs.pop("hash")
+        auth_date = int(pairs["auth_date"])
+    except (KeyError, TypeError, ValueError):
+        return False
+
+    now = int(time.time())
+    if auth_date > now + 300 or now - auth_date > max_age:
+        return False
+    data_check_string = "\n".join(f"{key}={pairs[key]}" for key in sorted(pairs))
+    secret_key = hmac.new(b"WebAppData", bot_token.encode(), hashlib.sha256).digest()
+    expected_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected_hash, received_hash)
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,20 +147,20 @@ class Anime:
 
     @classmethod
     def from_shikimori(cls, raw: dict[str, Any]) -> Anime:
-        image = raw.get("image") or {}
+        image = as_mapping(raw.get("image"))
         aired_on = str(raw.get("aired_on") or "")
         year = int(aired_on[:4]) if aired_on[:4].isdigit() else None
         score = raw.get("score")
         return cls(
             id=int(raw["id"]),
-            name=str(raw.get("name") or "Untitled"),
-            russian=raw.get("russian") or None,
-            kind=raw.get("kind"),
+            name=as_text(raw.get("name")) or "Untitled",
+            russian=as_text(raw.get("russian")),
+            kind=as_text(raw.get("kind")),
             score=None if not score or str(score) == "0.0" else str(score),
-            status=raw.get("status"),
-            image_url=absolute_url(image.get("original") or image.get("preview")),
-            image_preview=absolute_url(image.get("preview") or image.get("original")),
-            episodes=raw.get("episodes") or raw.get("episodes_aired") or None,
+            status=as_text(raw.get("status")),
+            image_url=absolute_url(as_text(image.get("original") or image.get("preview"))),
+            image_preview=absolute_url(as_text(image.get("preview") or image.get("original"))),
+            episodes=as_int(raw.get("episodes")) or as_int(raw.get("episodes_aired")),
             year=year,
             genres=(),
             source="shikimori",
@@ -110,21 +168,26 @@ class Anime:
 
     @classmethod
     def from_jikan(cls, raw: dict[str, Any]) -> Anime:
-        images = (raw.get("images") or {}).get("jpg") or {}
-        kind = raw.get("type")
+        images = as_mapping(as_mapping(raw.get("images")).get("jpg"))
+        kind = as_text(raw.get("type"))
         score = raw.get("score")
-        genres = tuple(str(genre["name"]) for genre in raw.get("genres") or [] if genre.get("name"))
+        raw_genres = raw.get("genres")
+        genres = tuple(
+            name
+            for genre in (raw_genres if isinstance(raw_genres, list) else [])
+            if (name := as_text(as_mapping(genre).get("name")))
+        )
         return cls(
             id=int(raw["mal_id"]),
-            name=str(raw.get("title") or "Untitled"),
+            name=as_text(raw.get("title")) or "Untitled",
             russian=None,
-            kind=str(kind).lower() if kind else None,
+            kind=kind.lower() if kind else None,
             score=str(score) if score else None,
             status=JIKAN_STATUS.get(str(raw.get("status") or "")),
-            image_url=images.get("large_image_url") or images.get("image_url"),
-            image_preview=images.get("image_url") or images.get("large_image_url"),
-            episodes=raw.get("episodes"),
-            year=raw.get("year"),
+            image_url=as_text(images.get("large_image_url") or images.get("image_url")),
+            image_preview=as_text(images.get("image_url") or images.get("large_image_url")),
+            episodes=as_int(raw.get("episodes")),
+            year=as_int(raw.get("year")),
             genres=genres,
             source="mal",
         )
@@ -153,6 +216,25 @@ class TTLCache[T]:
         self._entries.move_to_end(key)
         while len(self._entries) > self._max_entries:
             self._entries.popitem(last=False)
+
+
+class SlidingWindowRateLimiter:
+    """In-memory per-actor limit for expensive card uploads."""
+
+    def __init__(self, limit: int, window: float) -> None:
+        self._limit = limit
+        self._window = window
+        self._requests: dict[str, deque[float]] = {}
+
+    def allow(self, actor: str) -> bool:
+        now = monotonic()
+        requests = self._requests.setdefault(actor, deque())
+        while requests and now - requests[0] >= self._window:
+            requests.popleft()
+        if len(requests) >= self._limit:
+            return False
+        requests.append(now)
+        return True
 
 
 class Throttle:
@@ -186,31 +268,44 @@ async def fetch_json(
     params: dict[str, str] | None = None,
     json_payload: dict[str, Any] | None = None,
 ) -> Any:
-    """GET/POST JSON with per-host throttling and a single retry on 429."""
+    """GET/POST JSON with per-host throttling and one short retry for transient failures."""
     throttle = THROTTLES.get(urlparse(url).netloc)
     headers = {"User-Agent": USER_AGENT}
     method = "POST" if json_payload is not None else "GET"
     for attempt in (0, 1):
         if throttle:
             await throttle.wait()
-        async with session.request(
-            method,
-            url,
-            params=params,
-            json=json_payload,
-            headers=headers,
-            timeout=ClientTimeout(total=UPSTREAM_REQUEST_TIMEOUT),
-        ) as resp:
-            if resp.status == 429 and attempt == 0:
-                try:
-                    delay = float(resp.headers.get("Retry-After") or 1.0)
-                except ValueError:
-                    delay = 1.0
-                logging.warning("429 from %s, retrying in %.1fs", url, delay)
-                await asyncio.sleep(min(delay, 3.0))
-                continue
-            resp.raise_for_status()
-            return await resp.json()
+        try:
+            async with session.request(
+                method,
+                url,
+                params=params,
+                json=json_payload,
+                headers=headers,
+                timeout=ClientTimeout(total=UPSTREAM_REQUEST_TIMEOUT),
+            ) as resp:
+                if attempt == 0 and (resp.status == 429 or 500 <= resp.status < 600):
+                    if resp.status == 429:
+                        try:
+                            delay = float(resp.headers.get("Retry-After") or 1.0)
+                        except ValueError:
+                            delay = 1.0
+                    else:
+                        delay = 0.4
+                    logging.warning(
+                        "transient upstream status %s from %s; retrying", resp.status, url
+                    )
+                    await asyncio.sleep(min(delay, 3.0))
+                    continue
+                resp.raise_for_status()
+                return await resp.json()
+        except ClientResponseError:
+            raise
+        except (ClientError, TimeoutError) as exc:
+            if attempt:
+                raise
+            logging.warning("upstream request to %s failed (%s); retrying", url, exc)
+            await asyncio.sleep(0.4)
     raise RuntimeError("unreachable")
 
 
@@ -252,6 +347,7 @@ async def search_anime(
 
     animes: list[Anime] = []
     shikimori_failed = False
+    jikan_succeeded = False
     try:
         animes = await search_shikimori(session, query)
     except Exception as exc:
@@ -261,12 +357,15 @@ async def search_anime(
     if not animes:
         try:
             animes = await search_jikan(session, query)
+            jikan_succeeded = True
         except Exception as exc:
             if shikimori_failed:
                 raise
             logging.warning("Jikan fallback failed: %s", exc)
 
-    cache.put(key, animes)
+    # An empty Shikimori response is only trustworthy after the fallback answered too.
+    if animes or jikan_succeeded:
+        cache.put(key, animes)
     return animes
 
 
@@ -514,7 +613,7 @@ def cleanup_rendered_dir(settings: Settings) -> None:
             path.unlink()
         except OSError:
             continue
-        path.with_suffix(".json").unlink(missing_ok=True)
+        # Keep metadata: it contains Telegram's durable file_id, independent of local JPEG LRU.
         total -= size
         removed += 1
 
@@ -577,29 +676,26 @@ def build_router(
                 logging.info("Inline query %s expired before it could be answered", query.id)
 
         if card_id:
-            image_path = settings.rendered_dir / f"{card_id}.jpg"
-            if not image_path.is_file():
-                logging.warning("Inline card %s is missing from %s", card_id, image_path)
+            meta = load_card_meta(settings, card_id)
+            file_id = as_text(meta.get("file_id"))
+            if not file_id:
+                logging.warning("Inline card %s has no Telegram file_id", card_id)
                 await answer([], cache_time=1)
                 return
-            logging.info("Serving inline card %s (%d bytes)", card_id, image_path.stat().st_size)
-            meta = load_card_meta(settings, card_id)
-            image_url = f"{settings.public_base_url.rstrip('/')}/rendered/{card_id}.jpg"
             await answer(
                 [
-                    InlineQueryResultPhoto(
+                    InlineQueryResultCachedPhoto(
                         id=f"card-{card_id}",
-                        photo_url=image_url,
-                        thumbnail_url=image_url,
+                        photo_file_id=file_id,
                         title=str(meta.get("title") or "Shiki Card"),
                         description="Готовая карточка из WebApp" if ru else "Card from the WebApp",
-                        # caption=card_caption(meta),
+                        caption=card_caption(meta),
                         parse_mode="HTML",
                         reply_markup=card_markup(meta),
                     )
                 ],
-                # Rendered cards are mutable local files; do not let Telegram reuse an old result.
-                cache_time=0,
+                # Telegram owns this immutable media object, so caching is safe.
+                cache_time=86_400,
             )
             return
 
@@ -638,18 +734,31 @@ def build_router(
 
 
 async def create_web_app(
-    settings: Settings, session: ClientSession, cache: TTLCache[list[Anime]]
+    settings: Settings, session: ClientSession, cache: TTLCache[list[Anime]], bot: Bot
 ) -> web.Application:
     settings.rendered_dir.mkdir(parents=True, exist_ok=True)
     app = web.Application(client_max_size=8 * 1024 * 1024)
     html_path = Path(__file__).with_name("webapp.html")
     poster_cache: TTLCache[list[dict[str, str]]] = TTLCache(ttl=3600)
     trending_cache: TTLCache[list[Anime]] = TTLCache(ttl=1800)
+    upload_limiter = SlidingWindowRateLimiter(settings.rendered_uploads_per_hour, 3600)
 
     async def webapp_page(_: web.Request) -> web.FileResponse:
         return web.FileResponse(html_path)
 
+    def require_webapp(request: web.Request) -> str:
+        init_data = request.headers.get("X-Telegram-Init-Data", "")
+        if not validate_webapp_init_data(
+            init_data, settings.bot_token, settings.webapp_auth_max_age
+        ):
+            raise web.HTTPUnauthorized(text="valid Telegram WebApp initData required")
+        return init_data
+
+    async def healthz(_: web.Request) -> web.Response:
+        return web.json_response({"ok": True})
+
     async def search_api(request: web.Request) -> web.Response:
+        require_webapp(request)
         query = (request.query.get("q") or "").strip()
         if len(query) < 2:
             return web.json_response([])
@@ -660,11 +769,13 @@ async def create_web_app(
             return web.json_response([], status=500)
         return web.json_response([anime_payload(anime) for anime in animes])
 
-    async def trending_api(_: web.Request) -> web.Response:
+    async def trending_api(request: web.Request) -> web.Response:
+        require_webapp(request)
         animes = await trending_anime(session, trending_cache)
         return web.json_response([anime_payload(anime) for anime in animes])
 
     async def genres_api(request: web.Request) -> web.Response:
+        require_webapp(request)
         raw_id = request.match_info["anime_id"]
         if not raw_id.isdigit() or request.query.get("source", "shikimori") != "shikimori":
             return web.json_response({"genres": []})
@@ -676,6 +787,7 @@ async def create_web_app(
         return web.json_response({"genres": genres})
 
     async def posters_api(request: web.Request) -> web.Response:
+        require_webapp(request)
         raw_id = request.match_info["anime_id"]
         if not raw_id.isdigit():
             return web.json_response({"posters": []})
@@ -691,21 +803,46 @@ async def create_web_app(
         parsed = urlparse(url)
         if parsed.scheme != "https" or parsed.netloc not in ALLOWED_IMAGE_HOSTS:
             return web.Response(status=400, text="image host not allowed")
-        async with session.get(url, headers={"User-Agent": USER_AGENT}) as resp:
+        async with session.get(
+            url, headers={"User-Agent": USER_AGENT}, allow_redirects=False
+        ) as resp:
             resp.raise_for_status()
-            body = await resp.read()
+            try:
+                content_length = int(resp.headers.get("Content-Length") or 0)
+            except ValueError:
+                content_length = 0
+            if content_length > MAX_PROXY_IMAGE_BYTES:
+                return web.Response(status=413, text="image too large")
+            chunks: list[bytes] = []
+            total = 0
+            async for chunk in resp.content.iter_chunked(64 * 1024):
+                total += len(chunk)
+                if total > MAX_PROXY_IMAGE_BYTES:
+                    return web.Response(status=413, text="image too large")
+                chunks.append(chunk)
+            body = b"".join(chunks)
             content_type = resp.headers.get("Content-Type", "image/jpeg")
         return web.Response(
             body=body,
-            content_type=content_type,
             headers={
+                "Content-Type": content_type,
                 "Access-Control-Allow-Origin": "*",
                 "Cache-Control": "public, max-age=86400, immutable",
             },
         )
 
     async def save_rendered(request: web.Request) -> web.Response:
-        payload = await request.json()
+        init_data = require_webapp(request)
+        if not upload_limiter.allow(webapp_actor(init_data)):
+            return web.json_response(
+                {"ok": False, "error": "upload rate limit exceeded"}, status=429
+            )
+        try:
+            payload = await request.json()
+        except (json.JSONDecodeError, web.HTTPBadRequest):
+            return web.json_response({"ok": False, "error": "JSON body required"}, status=400)
+        if not isinstance(payload, dict):
+            return web.json_response({"ok": False, "error": "JSON object required"}, status=400)
         data_url = str(payload.get("image") or "")
         if not data_url.startswith("data:image/jpeg;base64,"):
             return web.json_response({"ok": False, "error": "jpeg data url required"}, status=400)
@@ -713,30 +850,50 @@ async def create_web_app(
             raw = base64.b64decode(data_url.split(",", 1)[1], validate=True)
         except ValueError:
             return web.json_response({"ok": False, "error": "bad base64"}, status=400)
-        if len(raw) > 5 * 1024 * 1024:
+        if len(raw) > MAX_RENDERED_IMAGE_BYTES:
             return web.json_response({"ok": False, "error": "image too large"}, status=400)
+        if not raw.startswith(b"\xff\xd8\xff"):
+            return web.json_response(
+                {"ok": False, "error": "jpeg magic bytes required"}, status=400
+            )
 
-        meta_raw = payload.get("meta") or {}
+        meta_raw = as_mapping(payload.get("meta"))
         url = str(meta_raw.get("url") or "")
         meta = {
             "title": str(meta_raw.get("title") or "")[:200],
             "subtitle": str(meta_raw.get("subtitle") or "")[:200],
             "url": url if allowed_link(url) else "",
         }
-
         card_id = uuid4().hex
+        try:
+            message = await bot.send_photo(
+                chat_id=settings.storage_chat_id,
+                photo=BufferedInputFile(raw, filename=f"shiki-card-{card_id}.jpg"),
+            )
+            if not message.photo:
+                raise RuntimeError("Telegram did not return a photo file_id")
+            meta["file_id"] = message.photo[-1].file_id
+        except Exception:
+            logging.exception("Failed to upload rendered card %s to Telegram storage", card_id)
+            return web.json_response({"ok": False, "error": "Telegram upload failed"}, status=502)
+
         image_path = settings.rendered_dir / f"{card_id}.jpg"
         image_path.write_bytes(raw)
         (settings.rendered_dir / f"{card_id}.json").write_text(json.dumps(meta, ensure_ascii=False))
         cleanup_rendered_dir(settings)
-        if not image_path.is_file():
-            logging.error("Rendered card %s was removed during cleanup", card_id)
-            return web.json_response(
-                {"ok": False, "error": "rendered card was removed"}, status=500
-            )
-        logging.info("Saved rendered card %s (%d bytes)", card_id, len(raw))
+        logging.info("Saved rendered card %s (%d bytes) to Telegram storage", card_id, len(raw))
         return web.json_response({"ok": True, "id": card_id, "query": f"card:{card_id}"})
 
+    async def rendered_jpeg(request: web.Request) -> web.StreamResponse:
+        card_id = request.match_info["card_id"]
+        image_path = settings.rendered_dir / f"{card_id}.jpg"
+        if not image_path.is_file():
+            raise web.HTTPNotFound()
+        return web.FileResponse(
+            image_path, headers={"Cache-Control": "public, max-age=31536000, immutable"}
+        )
+
+    app.router.add_get("/healthz", healthz)
     app.router.add_get("/webapp", webapp_page)
     app.router.add_get("/api/search", search_api)
     app.router.add_get("/api/trending", trending_api)
@@ -744,9 +901,7 @@ async def create_web_app(
     app.router.add_get("/api/anime/{anime_id}/posters", posters_api)
     app.router.add_get("/api/image", image_proxy)
     app.router.add_post("/api/rendered", save_rendered)
-    app.router.add_static(
-        "/rendered/", path=settings.rendered_dir, name="rendered", show_index=False
-    )
+    app.router.add_get("/rendered/{card_id:[A-Za-z0-9-]+}.jpg", rendered_jpeg)
     return app
 
 
@@ -773,7 +928,7 @@ async def main() -> None:
         except Exception:
             logging.warning("failed to set chat menu button", exc_info=True)
 
-        web_app = await create_web_app(settings, session, cache)
+        web_app = await create_web_app(settings, session, cache, bot)
         runner = web.AppRunner(web_app)
         await runner.setup()
         site = web.TCPSite(runner, settings.host, settings.port)

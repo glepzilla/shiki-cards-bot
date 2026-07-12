@@ -479,6 +479,13 @@
     tg?.setBackgroundColor?.('#0c0a14');
     tg?.disableVerticalSwipes?.();
 
+    // Every state-changing or data API call carries signed WebApp initData.
+    // The server verifies it with the bot token and never trusts initDataUnsafe.
+    const apiHeaders = tg?.initData ? { 'X-Telegram-Init-Data': tg.initData } : {};
+    function apiFetch(url, options = {}) {
+      return fetch(url, { ...options, headers: { ...apiHeaders, ...(options.headers || {}) } });
+    }
+
     /* ---------- i18n ---------- */
     const langCode = (tg?.initDataUnsafe?.user?.language_code || navigator.language || 'ru').toLowerCase();
     const RU = langCode.startsWith('ru');
@@ -782,7 +789,7 @@
         skeletons(4, holder);
         results.appendChild(holder);
         try {
-          const response = await fetch('/api/trending');
+          const response = await apiFetch('/api/trending');
           trendingItems = ((await response.json()) || []).filter((a) => a.image_url);
         } catch (_) {
           trendingItems = [];
@@ -814,7 +821,7 @@
       searchAbort?.abort();
       searchAbort = new AbortController();
       try {
-        const response = await fetch(`/api/search?q=${encodeURIComponent(q)}`, { signal: searchAbort.signal });
+        const response = await apiFetch(`/api/search?q=${encodeURIComponent(q)}`, { signal: searchAbort.signal });
         if (!response.ok) throw new Error('search failed');
         const items = (await response.json()).filter((a) => a.image_url);
         if (q !== input.value.trim()) return; // stale
@@ -1581,7 +1588,7 @@
     async function loadPosters(anime) {
       renderPosterStrip(true);
       try {
-        const response = await fetch(`/api/anime/${anime.id}/posters`);
+        const response = await apiFetch(`/api/anime/${anime.id}/posters`);
         const data = await response.json();
         if (selected !== anime) return;
         const seen = new Set(posterItems.map((p) => p.url));
@@ -1704,7 +1711,7 @@
 
       if (anime.source === 'shikimori' && !(anime.genres || []).length) {
         try {
-          const response = await fetch(`/api/anime/${anime.id}/genres?source=shikimori`);
+          const response = await apiFetch(`/api/anime/${anime.id}/genres?source=shikimori`);
           const data = await response.json();
           if (data.genres?.length && selected === anime) {
             anime.genres = data.genres;
@@ -1735,7 +1742,7 @@
       if (inTelegram) tg.MainButton?.showProgress?.(false);
       try {
         const image = canvas.toDataURL('image/jpeg', 0.88);
-        const response = await fetch('/api/rendered', {
+        const response = await apiFetch('/api/rendered', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
