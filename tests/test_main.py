@@ -5,6 +5,7 @@ import hmac
 import os
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.parse import urlencode
 
 from aiohttp import ClientSession
@@ -153,6 +154,48 @@ def test_webapp_rejects_unauthenticated_requests_and_upload_failures(tmp_path: P
                     },
                 )
                 assert response.status == 502
+            finally:
+                await client.close()
+
+    asyncio.run(check())
+
+
+def test_rendered_upload_reuses_file_id_for_identical_jpeg(tmp_path: Path) -> None:
+    class StorageBot:
+        def __init__(self) -> None:
+            self.uploads = 0
+
+        async def send_photo(self, **_: object) -> SimpleNamespace:
+            self.uploads += 1
+            return SimpleNamespace(photo=[SimpleNamespace(file_id="stored-photo-id")])
+
+    async def check() -> None:
+        settings = make_settings(tmp_path)
+        storage_bot = StorageBot()
+        async with ClientSession() as session:
+            app = await create_web_app(  # type: ignore[arg-type]
+                settings, session, TTLCache(ttl=60), storage_bot
+            )
+            client = TestClient(TestServer(app))
+            await client.start_server()
+            try:
+                init_data = signed_init_data("test-token", int(time.time()))
+                payload = {
+                    "image": "data:image/jpeg;base64,"
+                    + base64.b64encode(b"\xff\xd8\xffidentical-image").decode(),
+                    "meta": {"title": "One"},
+                }
+                first = await client.post(
+                    "/api/rendered", headers={"X-Telegram-Init-Data": init_data}, json=payload
+                )
+                second = await client.post(
+                    "/api/rendered", headers={"X-Telegram-Init-Data": init_data}, json=payload
+                )
+                first_data = await first.json()
+                second_data = await second.json()
+                assert first.status == second.status == 200
+                assert first_data["id"] == second_data["id"]
+                assert storage_bot.uploads == 1
             finally:
                 await client.close()
 

@@ -549,6 +549,49 @@ def load_card_meta(settings: Settings, card_id: str) -> dict[str, Any]:
         return {}
 
 
+def load_rendered_index(settings: Settings) -> dict[str, str]:
+    try:
+        loaded = json.loads((settings.rendered_dir / ".rendered-index.json").read_text())
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(loaded, dict):
+        return {}
+    return {
+        image_hash: card_id
+        for image_hash, card_id in loaded.items()
+        if isinstance(image_hash, str)
+        and len(image_hash) == 64
+        and all(char in "0123456789abcdef" for char in image_hash)
+        and isinstance(card_id, str)
+        and parse_card_query(f"card:{card_id}") is not None
+    }
+
+
+def save_rendered_index(settings: Settings, index: dict[str, str]) -> None:
+    path = settings.rendered_dir / ".rendered-index.json"
+    temporary_path = path.with_suffix(".tmp")
+    temporary_path.write_text(json.dumps(index, sort_keys=True))
+    temporary_path.replace(path)
+
+
+def find_rendered_card(settings: Settings, image_hash: str, index: dict[str, str]) -> str | None:
+    card_id = index.get(image_hash)
+    if card_id:
+        meta = load_card_meta(settings, card_id)
+        if meta.get("image_sha256") == image_hash and as_text(meta.get("file_id")):
+            return card_id
+        index.pop(image_hash, None)
+
+    # Rebuild one missing index entry from metadata after a crash or manual recovery.
+    for path in settings.rendered_dir.glob("*.json"):
+        card_id = path.stem
+        meta = load_card_meta(settings, card_id)
+        if meta.get("image_sha256") == image_hash and as_text(meta.get("file_id")):
+            index[image_hash] = card_id
+            return card_id
+    return None
+
+
 def webapp_url(settings: Settings, query_text: str = "") -> str:
     params = {}
     if query_text and not parse_card_query(query_text):
@@ -742,6 +785,7 @@ async def create_web_app(
     poster_cache: TTLCache[list[dict[str, str]]] = TTLCache(ttl=3600)
     trending_cache: TTLCache[list[Anime]] = TTLCache(ttl=1800)
     upload_limiter = SlidingWindowRateLimiter(settings.rendered_uploads_per_hour, 3600)
+    rendered_lock = asyncio.Lock()
 
     async def webapp_page(_: web.Request) -> web.FileResponse:
         return web.FileResponse(html_path)
@@ -857,32 +901,56 @@ async def create_web_app(
                 {"ok": False, "error": "jpeg magic bytes required"}, status=400
             )
 
-        meta_raw = as_mapping(payload.get("meta"))
-        url = str(meta_raw.get("url") or "")
-        meta = {
-            "title": str(meta_raw.get("title") or "")[:200],
-            "subtitle": str(meta_raw.get("subtitle") or "")[:200],
-            "url": url if allowed_link(url) else "",
-        }
-        card_id = uuid4().hex
-        try:
-            message = await bot.send_photo(
-                chat_id=settings.storage_chat_id,
-                photo=BufferedInputFile(raw, filename=f"shiki-card-{card_id}.jpg"),
-            )
-            if not message.photo:
-                raise RuntimeError("Telegram did not return a photo file_id")
-            meta["file_id"] = message.photo[-1].file_id
-        except Exception:
-            logging.exception("Failed to upload rendered card %s to Telegram storage", card_id)
-            return web.json_response({"ok": False, "error": "Telegram upload failed"}, status=502)
+        image_hash = hashlib.sha256(raw).hexdigest()
+        async with rendered_lock:
+            index = load_rendered_index(settings)
+            existing_card_id = find_rendered_card(settings, image_hash, index)
+            if existing_card_id:
+                save_rendered_index(settings, index)
+                logging.info(
+                    "Reused rendered card %s for image hash %s", existing_card_id, image_hash
+                )
+                return web.json_response(
+                    {"ok": True, "id": existing_card_id, "query": f"card:{existing_card_id}"}
+                )
 
-        image_path = settings.rendered_dir / f"{card_id}.jpg"
-        image_path.write_bytes(raw)
-        (settings.rendered_dir / f"{card_id}.json").write_text(json.dumps(meta, ensure_ascii=False))
-        cleanup_rendered_dir(settings)
-        logging.info("Saved rendered card %s (%d bytes) to Telegram storage", card_id, len(raw))
-        return web.json_response({"ok": True, "id": card_id, "query": f"card:{card_id}"})
+            meta_raw = as_mapping(payload.get("meta"))
+            url = str(meta_raw.get("url") or "")
+            meta = {
+                "title": str(meta_raw.get("title") or "")[:200],
+                "subtitle": str(meta_raw.get("subtitle") or "")[:200],
+                "url": url if allowed_link(url) else "",
+                "image_sha256": image_hash,
+            }
+            card_id = uuid4().hex
+            try:
+                message = await bot.send_photo(
+                    chat_id=settings.storage_chat_id,
+                    photo=BufferedInputFile(raw, filename=f"shiki-card-{card_id}.jpg"),
+                )
+                if not message.photo:
+                    raise RuntimeError("Telegram did not return a photo file_id")
+                meta["file_id"] = message.photo[-1].file_id
+            except Exception:
+                logging.exception("Failed to upload rendered card %s to Telegram storage", card_id)
+                return web.json_response(
+                    {"ok": False, "error": "Telegram upload failed"}, status=502
+                )
+
+            try:
+                image_path = settings.rendered_dir / f"{card_id}.jpg"
+                image_path.write_bytes(raw)
+                (settings.rendered_dir / f"{card_id}.json").write_text(
+                    json.dumps(meta, ensure_ascii=False)
+                )
+                index[image_hash] = card_id
+                save_rendered_index(settings, index)
+            except OSError:
+                logging.exception("Failed to persist rendered card %s", card_id)
+                return web.json_response({"ok": False, "error": "card storage failed"}, status=500)
+            cleanup_rendered_dir(settings)
+            logging.info("Saved rendered card %s (%d bytes) to Telegram storage", card_id, len(raw))
+            return web.json_response({"ok": True, "id": card_id, "query": f"card:{card_id}"})
 
     async def rendered_jpeg(request: web.Request) -> web.StreamResponse:
         card_id = request.match_info["card_id"]
