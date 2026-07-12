@@ -46,6 +46,6 @@ jobs:
           docker compose pull
           docker compose up -d
           docker image prune -f
-      - name: Cleanup plaintext
-        if: always()
-        run: rm -f .env
+      # - name: Cleanup plaintext
+      #   if: always()
+      #   run: rm -f .env
