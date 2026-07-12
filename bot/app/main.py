@@ -16,6 +16,7 @@ from uuid import uuid4
 
 from aiogram import Bot, Dispatcher, Router
 from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import CommandStart
 from aiogram.types import (
     InlineKeyboardButton,
@@ -36,6 +37,8 @@ MAL_ORIGIN = "https://myanimelist.net"
 JIKAN_API = "https://api.jikan.moe/v4"
 ANILIST_API = "https://graphql.anilist.co"
 USER_AGENT = "shiki-cards-bot/0.2"
+UPSTREAM_REQUEST_TIMEOUT = 4.0
+INLINE_SEARCH_TIMEOUT = 8.0
 ALLOWED_IMAGE_HOSTS = {"shikimori.io", "cdn.myanimelist.net", "s4.anilist.co"}
 ALLOWED_LINK_HOSTS = {"shikimori.io", "myanimelist.net"}
 
@@ -191,7 +194,12 @@ async def fetch_json(
         if throttle:
             await throttle.wait()
         async with session.request(
-            method, url, params=params, json=json_payload, headers=headers
+            method,
+            url,
+            params=params,
+            json=json_payload,
+            headers=headers,
+            timeout=ClientTimeout(total=UPSTREAM_REQUEST_TIMEOUT),
         ) as resp:
             if resp.status == 429 and attempt == 0:
                 try:
@@ -246,17 +254,17 @@ async def search_anime(
     shikimori_failed = False
     try:
         animes = await search_shikimori(session, query)
-    except Exception:
+    except Exception as exc:
         shikimori_failed = True
-        logging.warning("Shikimori search failed, trying Jikan", exc_info=True)
+        logging.warning("Shikimori search failed, trying Jikan: %s", exc)
 
     if not animes:
         try:
             animes = await search_jikan(session, query)
-        except Exception:
+        except Exception as exc:
             if shikimori_failed:
                 raise
-            logging.warning("Jikan fallback failed", exc_info=True)
+            logging.warning("Jikan fallback failed: %s", exc)
 
     cache.put(key, animes)
     return animes
@@ -555,16 +563,27 @@ def build_router(
         ru = is_russian(query.from_user.language_code)
         card_id = parse_card_query(text)
 
+        async def answer(results: list[InlineQueryResultUnion], cache_time: int) -> None:
+            try:
+                await query.answer(
+                    results,
+                    cache_time=cache_time,
+                    is_personal=True,
+                    button=results_button(settings, text, ru),
+                )
+            except TelegramBadRequest as exc:
+                if "query is too old" not in str(exc).casefold():
+                    raise
+                logging.info("Inline query %s expired before it could be answered", query.id)
+
         if card_id:
             image_path = settings.rendered_dir / f"{card_id}.jpg"
             if not image_path.exists():
-                await query.answer(
-                    [], cache_time=1, is_personal=True, button=results_button(settings, text, ru)
-                )
+                await answer([], cache_time=1)
                 return
             meta = load_card_meta(settings, card_id)
             image_url = f"{settings.public_base_url.rstrip('/')}/rendered/{card_id}.jpg"
-            await query.answer(
+            await answer(
                 [
                     InlineQueryResultPhoto(
                         id=f"card-{card_id}",
@@ -577,25 +596,21 @@ def build_router(
                         reply_markup=card_markup(meta),
                     )
                 ],
-                cache_time=300,
-                is_personal=True,
-                button=results_button(settings, text, ru),
+                # Rendered cards are mutable local files; do not let Telegram reuse an old result.
+                cache_time=0,
             )
             return
 
         if len(text) < 2:
-            await query.answer(
-                [], cache_time=1, is_personal=True, button=results_button(settings, text, ru)
-            )
+            await answer([], cache_time=1)
             return
 
         try:
-            animes = await search_anime(session, cache, text)
-        except Exception:
-            logging.exception("anime search failed")
-            await query.answer(
-                [], cache_time=1, is_personal=True, button=results_button(settings, text, ru)
-            )
+            async with asyncio.timeout(INLINE_SEARCH_TIMEOUT):
+                animes = await search_anime(session, cache, text)
+        except Exception as exc:
+            logging.warning("anime search failed: %s", exc)
+            await answer([], cache_time=1)
             return
 
         results: list[InlineQueryResultUnion] = []
@@ -615,12 +630,7 @@ def build_router(
                 )
             )
 
-        await query.answer(
-            results,
-            cache_time=30,
-            is_personal=True,
-            button=results_button(settings, text, ru),
-        )
+        await answer(results, cache_time=30)
 
     return router
 
