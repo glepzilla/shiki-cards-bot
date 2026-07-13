@@ -1,3 +1,4 @@
 creation_rules:
-  - path_regex: \.enc\.env$
+  # Match the plaintext input (.env) as well as the encrypted destination.
+  - path_regex: (\.env|\.enc\.env)$
     age: age1mklm237nud7jwv7xvcsw2h5q79mt8mx73g886h5xg0c7z7hl8yhqc9nval,age19kxgtzqv30w9v458r8p2t8gsp00vmgw6kqgkakhhlru5zelwd4vs96a959
