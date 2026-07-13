@@ -142,6 +142,7 @@ def test_webapp_rejects_unauthenticated_requests_and_upload_failures(tmp_path: P
             try:
                 response = await client.get("/api/search?q=test")
                 assert response.status == 401
+                assert (await client.get("/static/ds/styles.css")).status == 200
                 assert (await client.get("/rendered/card.json")).status == 404
 
                 init_data = signed_init_data("test-token", int(time.time()))

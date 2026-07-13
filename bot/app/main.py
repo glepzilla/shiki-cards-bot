@@ -782,6 +782,7 @@ async def create_web_app(
     settings.rendered_dir.mkdir(parents=True, exist_ok=True)
     app = web.Application(client_max_size=8 * 1024 * 1024)
     html_path = Path(__file__).with_name("webapp.html")
+    static_dir = Path(__file__).with_name("static")
     poster_cache: TTLCache[list[dict[str, str]]] = TTLCache(ttl=3600)
     trending_cache: TTLCache[list[Anime]] = TTLCache(ttl=1800)
     upload_limiter = SlidingWindowRateLimiter(settings.rendered_uploads_per_hour, 3600)
@@ -963,6 +964,7 @@ async def create_web_app(
 
     app.router.add_get("/healthz", healthz)
     app.router.add_get("/webapp", webapp_page)
+    app.router.add_static("/static/", static_dir, name="static")
     app.router.add_get("/api/search", search_api)
     app.router.add_get("/api/trending", trending_api)
     app.router.add_get("/api/anime/{anime_id}/genres", genres_api)
