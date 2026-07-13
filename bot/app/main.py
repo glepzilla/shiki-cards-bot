@@ -8,6 +8,7 @@ import html
 import json
 import logging
 import os
+import socket
 import time
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -32,7 +33,14 @@ from aiogram.types import (
     Message,
     WebAppInfo,
 )
-from aiohttp import ClientError, ClientResponseError, ClientSession, ClientTimeout, web
+from aiohttp import (
+    ClientError,
+    ClientResponseError,
+    ClientSession,
+    ClientTimeout,
+    TCPConnector,
+    web,
+)
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.cache import SlidingWindowRateLimiter, Throttle, TTLCache
@@ -989,7 +997,12 @@ async def main() -> None:
     cleanup_rendered_dir(settings)
     cache: TTLCache[list[Anime]] = TTLCache(ttl=settings.search_cache_ttl)
 
-    async with ClientSession(timeout=ClientTimeout(total=15)) as direct_session:
+    # The VPS has unreliable IPv6 reachability to Cloudflare-backed poster CDNs.
+    # Force IPv4 for provider traffic; Telegram continues to use Clash separately.
+    async with ClientSession(
+        timeout=ClientTimeout(total=15),
+        connector=TCPConnector(family=socket.AF_INET, ttl_dns_cache=300),
+    ) as direct_session:
         upstream = UpstreamSessions(direct_session)
         bot_session = AiohttpSession(proxy=settings.proxy_url) if settings.proxy_url else None
         bot = Bot(settings.bot_token, session=bot_session)
