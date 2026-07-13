@@ -143,6 +143,8 @@ def test_webapp_rejects_unauthenticated_requests_and_upload_failures(tmp_path: P
                 response = await client.get("/api/search?q=test")
                 assert response.status == 401
                 assert (await client.get("/static/ds/styles.css")).status == 200
+                assert (await client.get("/static/webapp.css")).status == 200
+                assert (await client.get("/static/webapp.js")).status == 200
                 webapp = await client.get("/webapp")
                 assert webapp.status == 200
                 assert "/static/ds/_ds_bundle.js" in await webapp.text()
