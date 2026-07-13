@@ -125,7 +125,9 @@ def test_upstream_sessions_direct_russian_apis_and_proxy_other_providers() -> No
     sessions.request("GET", "https://shikimori.io/api/animes")
     sessions.request("GET", "https://api.jikan.moe/v4/anime")
     sessions.request("GET", "https://graphql.anilist.co")
-    assert len(direct.calls) == 2
+    sessions.request("GET", "https://s4.anilist.co/file/cover.jpg")
+    sessions.request("GET", "https://cdn.myanimelist.net/images/cover.jpg")
+    assert len(direct.calls) == 4
     assert all("proxy" not in call[2] for call in direct.calls)
     assert proxied.calls[0][2]["proxy"] == "http://clash.test:7890"
 

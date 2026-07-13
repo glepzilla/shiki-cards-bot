@@ -53,8 +53,13 @@ ALLOWED_IMAGE_HOSTS = {
     "s4.anilist.co",
 }
 ALLOWED_LINK_HOSTS = {"shikimori.one", "shikimori.io", "myanimelist.net"}
-# These Russian APIs are reachable from the VPS without Clash.
-DIRECT_UPSTREAM_HOSTS = {"shikimori.io", "api.jikan.moe"}
+# These provider APIs and AniList's image CDN are reachable from the VPS without Clash.
+DIRECT_UPSTREAM_HOSTS = {
+    "shikimori.io",
+    "api.jikan.moe",
+    "graphql.anilist.co",
+    "s4.anilist.co",
+}
 
 JIKAN_STATUS = {
     "Currently Airing": "ongoing",
