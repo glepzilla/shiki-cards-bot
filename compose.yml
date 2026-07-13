@@ -9,9 +9,8 @@ services:
     restart: "no"
 
   renderer:
-    build:
-      context: .
-      dockerfile: renderer/Dockerfile
+    # Built in GitHub Actions: do not run npm/skia installation on the VPS.
+    image: ghcr.io/glepzilla/shiki-cards-bot-renderer:latest
     environment:
       RENDERER_TOKEN: ${RENDERER_TOKEN:?set RENDERER_TOKEN in .env}
     networks: [proxy]

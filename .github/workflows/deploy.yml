@@ -39,7 +39,8 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v6
+      - name: Build and push bot image
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: true
@@ -48,6 +49,17 @@ jobs:
             ghcr.io/${{ github.repository }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: Build and push renderer image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: renderer/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}-renderer:latest
+            ghcr.io/${{ github.repository }}-renderer:${{ github.sha }}
+          cache-from: type=gha,scope=renderer
+          cache-to: type=gha,mode=max,scope=renderer
 
   deploy:
     needs: build
