@@ -119,7 +119,7 @@ def test_anilist_cover_replaces_the_default_poster() -> None:
     assert apply_anilist_covers([anime], {}) == [anime]
 
 
-def test_upstream_sessions_route_shikimori_directly() -> None:
+def test_upstream_sessions_proxy_every_public_provider() -> None:
     class CapturingSession:
         def __init__(self) -> None:
             self.calls: list[tuple[str, str, dict[str, object]]] = []
@@ -128,19 +128,15 @@ def test_upstream_sessions_route_shikimori_directly() -> None:
             self.calls.append((method, url, kwargs))
             return object()
 
-    direct = CapturingSession()
-    proxied = CapturingSession()
-    sessions = UpstreamSessions(direct, proxied, "http://clash.test:7890")  # type: ignore[arg-type]
-
-    assert sessions.session_for_url("https://shikimori.one/api/animes") is direct
-    assert sessions.session_for_url("https://shikimori.io/api/animes") is direct
-    assert sessions.session_for_url("https://api.jikan.moe/v4/anime") is proxied
-    assert sessions.session_for_url("https://s4.anilist.co/file/cover.jpg") is proxied
+    external = CapturingSession()
+    internal = CapturingSession()
+    sessions = UpstreamSessions(external, internal, "http://clash.test:7890")  # type: ignore[arg-type]
 
     sessions.request("GET", "https://shikimori.one/api/animes")
     sessions.request("GET", "https://api.jikan.moe/v4/anime")
-    assert "proxy" not in direct.calls[0][2]
-    assert proxied.calls[0][2]["proxy"] == "http://clash.test:7890"
+    assert len(external.calls) == 2
+    assert all(call[2]["proxy"] == "http://clash.test:7890" for call in external.calls)
+    assert not internal.calls
 
 
 def test_ttl_cache_expires_and_evicts_oldest() -> None:

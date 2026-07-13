@@ -32,8 +32,7 @@ services:
     environment:
       # The proxy runs on the Docker host. It must listen on the Docker bridge,
       # not only on the host's loopback address (see README).
-      # Only selected upstreams use this proxy in application code; a global
-      # container proxy would send Shikimori through the slow route.
+      # Application code explicitly proxies all public provider traffic.
       PROXY_URL: http://host.docker.internal:7890
       RENDERER_URL: http://renderer:3000
       RENDERER_TOKEN: ${RENDERER_TOKEN:?set RENDERER_TOKEN in .env}

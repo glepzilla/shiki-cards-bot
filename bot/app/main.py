@@ -52,7 +52,6 @@ ALLOWED_IMAGE_HOSTS = {
     "s4.anilist.co",
 }
 ALLOWED_LINK_HOSTS = {"shikimori.one", "shikimori.io", "myanimelist.net"}
-DIRECT_UPSTREAM_HOSTS = {"shikimori.one", "shikimori.io"}
 
 JIKAN_STATUS = {
     "Currently Airing": "ongoing",
@@ -279,21 +278,16 @@ THROTTLES = {
 
 @dataclass(frozen=True, slots=True)
 class UpstreamSessions:
-    """Route Russian Shikimori traffic directly and blocked providers via Clash."""
+    """Send all public upstream traffic through one explicit Clash proxy."""
 
-    direct: ClientSession
-    proxied: ClientSession
+    external: ClientSession
+    internal: ClientSession
     proxy_url: str | None = None
 
-    def session_for_url(self, url: str) -> ClientSession:
-        host = (urlparse(url).hostname or "").lower()
-        return self.direct if host in DIRECT_UPSTREAM_HOSTS else self.proxied
-
-    def request(self, method: str, url: str, *, force_proxy: bool = False, **kwargs: Any) -> Any:
-        session = self.proxied if force_proxy else self.session_for_url(url)
-        if session is self.proxied and self.proxy_url:
+    def request(self, method: str, url: str, **kwargs: Any) -> Any:
+        if self.proxy_url:
             kwargs["proxy"] = self.proxy_url
-        return session.request(method, url, **kwargs)
+        return self.external.request(method, url, **kwargs)
 
     def get(self, url: str, **kwargs: Any) -> Any:
         return self.request("GET", url, **kwargs)
@@ -321,9 +315,6 @@ async def fetch_json(
                 json=json_payload,
                 headers=headers,
                 timeout=ClientTimeout(total=UPSTREAM_REQUEST_TIMEOUT),
-                # Shikimori is normally direct; retry it through Clash if the
-                # origin route is temporarily unavailable from this VPS.
-                force_proxy=attempt == 1 and urlparse(url).hostname in DIRECT_UPSTREAM_HOSTS,
             ) as resp:
                 if attempt == 0 and (resp.status == 429 or 500 <= resp.status < 600):
                     if resp.status == 429:
@@ -957,7 +948,7 @@ async def create_web_app(
                 "options": state.option_values,
             }
             try:
-                async with session.direct.post(
+                async with session.internal.post(
                     settings.renderer_url.rstrip("/") + "/render",
                     json=payload,
                     headers={"Authorization": f"Bearer {settings.renderer_token}"},
@@ -1213,10 +1204,10 @@ async def main() -> None:
     cache: TTLCache[list[Anime]] = TTLCache(ttl=settings.search_cache_ttl)
 
     async with (
-        ClientSession(timeout=ClientTimeout(total=15)) as direct_session,
-        ClientSession(timeout=ClientTimeout(total=15)) as proxied_session,
+        ClientSession(timeout=ClientTimeout(total=15)) as external_session,
+        ClientSession(timeout=ClientTimeout(total=15)) as internal_session,
     ):
-        upstream = UpstreamSessions(direct_session, proxied_session, settings.proxy_url)
+        upstream = UpstreamSessions(external_session, internal_session, settings.proxy_url)
         bot_session = AiohttpSession(proxy=settings.proxy_url) if settings.proxy_url else None
         bot = Bot(settings.bot_token, session=bot_session)
         dp = Dispatcher()

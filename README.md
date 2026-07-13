@@ -23,17 +23,17 @@ cp .env.example .env
 docker compose -f compose.dev.yml up --build
 ```
 
-## Продакшен: сеть и split egress
+## Продакшен: сеть и исходящий proxy
 
 В Cloudflare для домена приложения используйте **DNS only** (серое облако), а TLS
 терминируйте на origin через Traefik/Let's Encrypt. После переключения проверьте
 `https://<домен>/healthz` из обычного браузера и из Telegram.
 
-`PROXY_URL` нужен только для заблокированных исходящих направлений: Bot API,
-Jikan, AniList и CDN MAL/AniList. Shikimori (`shikimori.one`) приложение вызывает
-напрямую. Не задавайте `HTTP_PROXY` или `HTTPS_PROXY` контейнеру: они возвращают
-Shikimori в медленный глобальный туннель. На Docker-хосте Clash/Mihomo должен
-слушать bridge-доступный `host.docker.internal:7890`.
+`PROXY_URL` используется для всех публичных исходящих запросов бота: Telegram,
+Shikimori, Jikan, AniList и CDN. Это намеренно простой и надёжный маршрут; сам
+WebApp по-прежнему обращается к origin напрямую. Не задавайте `HTTP_PROXY` или
+`HTTPS_PROXY` контейнеру: прокси применяется явно только в коде. На Docker-хосте
+Clash/Mihomo должен слушать bridge-доступный `host.docker.internal:7890`.
 
 После деплоя проверьте health endpoint и Telegram Bot API через прокси:
 
