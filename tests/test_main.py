@@ -15,6 +15,7 @@ from app.main import (
     Settings,
     SlidingWindowRateLimiter,
     TTLCache,
+    apply_anilist_covers,
     cleanup_rendered_dir,
     create_web_app,
     parse_card_query,
@@ -89,6 +90,24 @@ def test_anime_from_jikan_handles_dirty_nested_data() -> None:
     assert anime.episodes == 24
     assert anime.year == 2020
     assert anime.image_url is None
+
+
+def test_anilist_cover_replaces_the_default_poster() -> None:
+    anime = Anime.from_shikimori(
+        {
+            "id": "17",
+            "name": "Original",
+            "image": {"original": "/system/animes/original/17.jpg"},
+        }
+    )
+    cover_url = "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/17.jpg"
+    cover_thumb = "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/17.jpg"
+
+    [with_anilist_cover] = apply_anilist_covers([anime], {17: (cover_url, cover_thumb)})
+    assert with_anilist_cover.image_url == cover_url
+    assert with_anilist_cover.image_preview == cover_thumb
+    assert with_anilist_cover.image_source == "anilist"
+    assert apply_anilist_covers([anime], {}) == [anime]
 
 
 def test_ttl_cache_expires_and_evicts_oldest() -> None:

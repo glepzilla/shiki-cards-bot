@@ -1,14 +1,26 @@
+# Repository and local secrets
 .git
 .env
 .env.*
 !.env.example
-.venv
-.cache
-.mypy_cache
-.ruff_cache
-.pytest_cache
-.pi-subagents
-.claude
-__pycache__
-*.pyc
 secrets.enc.env
+
+# Python artifacts and tooling caches
+.venv/
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Build artifacts and local agent/editor state
+build/
+dist/
+*.egg-info/
+.claude/
+.pi-subagents/
+.DS_Store

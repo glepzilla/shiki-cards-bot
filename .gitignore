@@ -1,9 +1,26 @@
+# Local environment and secrets
 .env
+.env.*
+!.env.example
+
+# Python artifacts and tooling caches
 .venv/
 __pycache__/
+*.py[cod]
 .mypy_cache/
-.ruff_cache/
 .pytest_cache/
+.ruff_cache/
 .cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Local agent/editor state
 .claude/
 .pi-subagents/
+.DS_Store

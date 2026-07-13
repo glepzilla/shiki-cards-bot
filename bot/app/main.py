@@ -9,10 +9,8 @@ import json
 import logging
 import os
 import time
-from collections import OrderedDict, deque
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
-from time import monotonic
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlparse
 from uuid import uuid4
@@ -36,6 +34,8 @@ from aiogram.types import (
 )
 from aiohttp import ClientError, ClientResponseError, ClientSession, ClientTimeout, web
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from app.cache import SlidingWindowRateLimiter, Throttle, TTLCache
 
 SHIKIMORI_ORIGIN = "https://shikimori.io"
 MAL_ORIGIN = "https://myanimelist.net"
@@ -86,7 +86,7 @@ def as_text(value: Any) -> str | None:
 def as_int(value: Any) -> int | None:
     try:
         return int(value) if value is not None and not isinstance(value, bool) else None
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
 
 
@@ -97,7 +97,7 @@ def webapp_actor(init_data: str) -> str:
         user_id = as_mapping(user).get("id")
         if user_id is not None:
             return f"user:{user_id}"
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         pass
     return f"init:{hashlib.sha256(init_data.encode()).hexdigest()}"
 
@@ -108,7 +108,7 @@ def validate_webapp_init_data(init_data: str, bot_token: str, max_age: int) -> b
         pairs = dict(parse_qsl(init_data, keep_blank_values=True))
         received_hash = pairs.pop("hash")
         auth_date = int(pairs["auth_date"])
-    except (KeyError, TypeError, ValueError):
+    except KeyError, TypeError, ValueError:
         return False
 
     now = int(time.time())
@@ -130,6 +130,7 @@ class Anime:
     status: str | None
     image_url: str | None
     image_preview: str | None
+    image_source: str
     episodes: int | None
     year: int | None
     genres: tuple[str, ...]
@@ -160,6 +161,7 @@ class Anime:
             status=as_text(raw.get("status")),
             image_url=absolute_url(as_text(image.get("original") or image.get("preview"))),
             image_preview=absolute_url(as_text(image.get("preview") or image.get("original"))),
+            image_source="shikimori",
             episodes=as_int(raw.get("episodes")) or as_int(raw.get("episodes_aired")),
             year=year,
             genres=(),
@@ -186,72 +188,12 @@ class Anime:
             status=JIKAN_STATUS.get(str(raw.get("status") or "")),
             image_url=as_text(images.get("large_image_url") or images.get("image_url")),
             image_preview=as_text(images.get("image_url") or images.get("large_image_url")),
+            image_source="mal",
             episodes=as_int(raw.get("episodes")),
             year=as_int(raw.get("year")),
             genres=genres,
             source="mal",
         )
-
-
-class TTLCache[T]:
-    """Tiny in-memory TTL cache so repeated requests don't hammer external APIs."""
-
-    def __init__(self, ttl: float, max_entries: int = 128) -> None:
-        self._ttl = ttl
-        self._max_entries = max_entries
-        self._entries: OrderedDict[str, tuple[float, T]] = OrderedDict()
-
-    def get(self, key: str) -> T | None:
-        entry = self._entries.get(key)
-        if entry is None:
-            return None
-        stored_at, value = entry
-        if monotonic() - stored_at > self._ttl:
-            del self._entries[key]
-            return None
-        return value
-
-    def put(self, key: str, value: T) -> None:
-        self._entries[key] = (monotonic(), value)
-        self._entries.move_to_end(key)
-        while len(self._entries) > self._max_entries:
-            self._entries.popitem(last=False)
-
-
-class SlidingWindowRateLimiter:
-    """In-memory per-actor limit for expensive card uploads."""
-
-    def __init__(self, limit: int, window: float) -> None:
-        self._limit = limit
-        self._window = window
-        self._requests: dict[str, deque[float]] = {}
-
-    def allow(self, actor: str) -> bool:
-        now = monotonic()
-        requests = self._requests.setdefault(actor, deque())
-        while requests and now - requests[0] >= self._window:
-            requests.popleft()
-        if len(requests) >= self._limit:
-            return False
-        requests.append(now)
-        return True
-
-
-class Throttle:
-    """Min interval between calls to one upstream host — their rate limits are strict
-    (Shikimori 5 rps, Jikan 3 rps), and a fast typer easily bursts past them."""
-
-    def __init__(self, interval: float) -> None:
-        self._interval = interval
-        self._lock = asyncio.Lock()
-        self._last = 0.0
-
-    async def wait(self) -> None:
-        async with self._lock:
-            delay = self._last + self._interval - monotonic()
-            if delay > 0:
-                await asyncio.sleep(delay)
-            self._last = monotonic()
 
 
 THROTTLES = {
@@ -364,6 +306,8 @@ async def search_anime(
             logging.warning("Jikan fallback failed: %s", exc)
 
     # An empty Shikimori response is only trustworthy after the fallback answered too.
+    if animes:
+        animes = await prefer_anilist_covers(session, animes)
     if animes or jikan_succeeded:
         cache.put(key, animes)
     return animes
@@ -400,6 +344,7 @@ async def trending_anime(session: ClientSession, cache: TTLCache[list[Anime]]) -
             logging.warning("Jikan trending fallback failed", exc_info=True)
 
     if animes:
+        animes = await prefer_anilist_covers(session, animes)
         cache.put("__trending__", animes)
     return animes
 
@@ -416,14 +361,62 @@ async def fetch_jikan_pictures(session: ClientSession, mal_id: int) -> list[tupl
     return pairs
 
 
-async def fetch_anilist_cover(session: ClientSession, mal_id: int) -> list[tuple[str, str]]:
-    query = "query($id:Int){Media(idMal:$id,type:ANIME){coverImage{extraLarge large}}}"
-    payload = {"query": query, "variables": {"id": mal_id}}
+async def fetch_anilist_covers(
+    session: ClientSession, mal_ids: list[int]
+) -> dict[int, tuple[str, str]]:
+    """Fetch AniList covers in one request, keyed by MyAnimeList id."""
+    if not mal_ids:
+        return {}
+
+    query = (
+        "query($ids:[Int]){Page(perPage:50){media(idMal_in:$ids,type:ANIME)"
+        "{idMal coverImage{extraLarge large}}}}"
+    )
+    payload = {"query": query, "variables": {"ids": mal_ids}}
     data = await fetch_json(session, ANILIST_API, json_payload=payload)
-    cover = ((data.get("data") or {}).get("Media") or {}).get("coverImage") or {}
-    url = cover.get("extraLarge") or cover.get("large")
-    thumb = cover.get("large") or cover.get("extraLarge")
-    return [(str(url), str(thumb or url))] if url else []
+    page = as_mapping(as_mapping(data).get("data")).get("Page")
+    media = as_mapping(page).get("media")
+    covers: dict[int, tuple[str, str]] = {}
+    for item in media if isinstance(media, list) else []:
+        item_data = as_mapping(item)
+        mal_id = as_int(item_data.get("idMal"))
+        cover = as_mapping(item_data.get("coverImage"))
+        url = as_text(cover.get("extraLarge") or cover.get("large"))
+        thumb = as_text(cover.get("large") or cover.get("extraLarge"))
+        if mal_id is not None and url and allowed_image(url):
+            covers[mal_id] = (url, thumb if thumb and allowed_image(thumb) else url)
+    return covers
+
+
+def apply_anilist_covers(animes: list[Anime], covers: dict[int, tuple[str, str]]) -> list[Anime]:
+    """Use AniList artwork when available and preserve the original provider as fallback."""
+    return [
+        replace(
+            anime,
+            image_url=covers[anime.id][0],
+            image_preview=covers[anime.id][1],
+            image_source="anilist",
+        )
+        if anime.id in covers
+        else anime
+        for anime in animes
+    ]
+
+
+async def prefer_anilist_covers(session: ClientSession, animes: list[Anime]) -> list[Anime]:
+    if not animes:
+        return animes
+    try:
+        covers = await fetch_anilist_covers(session, [anime.id for anime in animes])
+        return apply_anilist_covers(animes, covers)
+    except Exception:
+        logging.warning("AniList cover fetch failed; using source posters", exc_info=True)
+        return animes
+
+
+async def fetch_anilist_cover(session: ClientSession, mal_id: int) -> list[tuple[str, str]]:
+    cover = (await fetch_anilist_covers(session, [mal_id])).get(mal_id)
+    return [cover] if cover else []
 
 
 def allowed_image(url: str) -> bool:
@@ -474,6 +467,7 @@ def anime_payload(anime: Anime) -> dict[str, Any]:
         "status": anime.status,
         "image_url": anime.image_url,
         "image_preview": anime.image_preview,
+        "image_source": anime.image_source,
         "episodes": anime.episodes,
         "year": anime.year,
         "genres": list(anime.genres),
@@ -552,7 +546,7 @@ def load_card_meta(settings: Settings, card_id: str) -> dict[str, Any]:
 def load_rendered_index(settings: Settings) -> dict[str, str]:
     try:
         loaded = json.loads((settings.rendered_dir / ".rendered-index.json").read_text())
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return {}
     if not isinstance(loaded, dict):
         return {}
@@ -884,7 +878,7 @@ async def create_web_app(
             )
         try:
             payload = await request.json()
-        except (json.JSONDecodeError, web.HTTPBadRequest):
+        except json.JSONDecodeError, web.HTTPBadRequest:
             return web.json_response({"ok": False, "error": "JSON body required"}, status=400)
         if not isinstance(payload, dict):
             return web.json_response({"ok": False, "error": "JSON object required"}, status=400)

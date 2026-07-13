@@ -207,7 +207,7 @@
 
   function Editor({ anime, onBack, notify }) {
     const canvasRef = useRef(null);
-    const [poster, setPoster] = useState(anime.image_url); const [posters, setPosters] = useState([{ url: anime.image_url, thumb: anime.image_preview || anime.image_url, source: anime.source }]);
+    const [poster, setPoster] = useState(anime.image_url); const [posters, setPosters] = useState([{ url: anime.image_url, thumb: anime.image_preview || anime.image_url, source: anime.image_source || anime.source }]);
     const [preset, setPreset] = useState('classic'); const [titleLanguage, setTitleLanguage] = useState(RU && anime.title !== anime.name ? 'ru' : 'orig');
     const [options, setOptions] = useState({ score: true, genres: true, mark: true }); const [sending, setSending] = useState(false);
     const displayTitle = titleLanguage === 'orig' ? anime.name : anime.title;
