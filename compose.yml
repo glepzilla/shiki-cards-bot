@@ -8,20 +8,36 @@ services:
       - rendered:/app/.cache/rendered
     restart: "no"
 
+  renderer:
+    build:
+      context: .
+      dockerfile: renderer/Dockerfile
+    environment:
+      RENDERER_TOKEN: ${RENDERER_TOKEN:?set RENDERER_TOKEN in .env}
+    networks: [proxy]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
   bot:
     image: ghcr.io/glepzilla/shiki-cards-bot:latest    # ← неймспейс орги!
     restart: unless-stopped
     depends_on:
       rendered-permissions:
         condition: service_completed_successfully
+      renderer:
+        condition: service_healthy
     env_file: .env
     environment:
       # The proxy runs on the Docker host. It must listen on the Docker bridge,
       # not only on the host's loopback address (see README).
+      # Only selected upstreams use this proxy in application code; a global
+      # container proxy would send Shikimori through the slow route.
       PROXY_URL: http://host.docker.internal:7890
-      HTTP_PROXY: http://host.docker.internal:7890
-      HTTPS_PROXY: http://host.docker.internal:7890
-      NO_PROXY: localhost,127.0.0.1,::1
+      RENDERER_URL: http://renderer:3000
+      RENDERER_TOKEN: ${RENDERER_TOKEN:?set RENDERER_TOKEN in .env}
     extra_hosts:
       - host.docker.internal:host-gateway
     volumes:

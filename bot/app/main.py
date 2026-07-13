@@ -24,7 +24,6 @@ from aiogram.types import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     InlineQuery,
-    InlineQueryResultCachedPhoto,
     InlineQueryResultPhoto,
     InlineQueryResultsButton,
     InlineQueryResultUnion,
@@ -37,7 +36,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.cache import SlidingWindowRateLimiter, Throttle, TTLCache
 
-SHIKIMORI_ORIGIN = "https://shikimori.io"
+SHIKIMORI_ORIGIN = "https://shikimori.one"
 MAL_ORIGIN = "https://myanimelist.net"
 JIKAN_API = "https://api.jikan.moe/v4"
 ANILIST_API = "https://graphql.anilist.co"
@@ -46,8 +45,14 @@ UPSTREAM_REQUEST_TIMEOUT = 4.0
 INLINE_SEARCH_TIMEOUT = 8.0
 MAX_RENDERED_IMAGE_BYTES = 5 * 1024 * 1024
 MAX_PROXY_IMAGE_BYTES = 5 * 1024 * 1024
-ALLOWED_IMAGE_HOSTS = {"shikimori.io", "cdn.myanimelist.net", "s4.anilist.co"}
-ALLOWED_LINK_HOSTS = {"shikimori.io", "myanimelist.net"}
+ALLOWED_IMAGE_HOSTS = {
+    "shikimori.one",
+    "shikimori.io",  # Older API payloads may still contain this host.
+    "cdn.myanimelist.net",
+    "s4.anilist.co",
+}
+ALLOWED_LINK_HOSTS = {"shikimori.one", "shikimori.io", "myanimelist.net"}
+DIRECT_UPSTREAM_HOSTS = {"shikimori.one", "shikimori.io"}
 
 JIKAN_STATUS = {
     "Currently Airing": "ongoing",
@@ -70,6 +75,74 @@ class Settings(BaseSettings):
     storage_chat_id: int | str
     webapp_auth_max_age: int = 86_400
     proxy_url: str | None = None
+    renderer_url: str = "http://renderer:3000"
+    renderer_token: str = ""
+    card_cache_dir: Path = Path(".cache/cards")
+    card_cache_ttl: int = 604_800
+    card_cache_max_mb: int = 256
+
+
+CARD_STYLES = {"classic", "aurora", "glass", "neon", "vhs", "manga", "mag", "polaroid", "print"}
+
+
+@dataclass(frozen=True, slots=True)
+class CardState:
+    anime_id: int
+    style: str
+    options: int
+    language: str
+    poster_index: int
+
+    @property
+    def option_values(self) -> dict[str, bool]:
+        return {
+            "score": bool(self.options & 1),
+            "genres": bool(self.options & 2),
+            "mark": bool(self.options & 4),
+        }
+
+
+def encode_card_token(state: CardState) -> str:
+    payload = json.dumps(
+        {
+            "a": state.anime_id,
+            "s": state.style,
+            "o": state.options,
+            "l": state.language,
+            "p": state.poster_index,
+        },
+        separators=(",", ":"),
+    ).encode()
+    return base64.urlsafe_b64encode(payload).rstrip(b"=").decode()
+
+
+def decode_card_token(token: str) -> CardState | None:
+    if (
+        not token
+        or len(token) > 256
+        or any(
+            char not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
+            for char in token
+        )
+    ):
+        return None
+    try:
+        raw = base64.urlsafe_b64decode(token + "=" * (-len(token) % 4))
+        value = json.loads(raw)
+        state = CardState(
+            int(value["a"]), str(value["s"]), int(value["o"]), str(value["l"]), int(value["p"])
+        )
+    except ValueError, TypeError, KeyError, json.JSONDecodeError:
+        return None
+    if (
+        state.anime_id <= 0
+        or state.style not in CARD_STYLES
+        or not 0 <= state.options <= 7
+        or state.language not in {"ru", "orig"}
+        or not 0 <= state.poster_index <= 12
+    ):
+        return None
+    return state
 
 
 def as_mapping(value: Any) -> dict[str, Any]:
@@ -197,14 +270,37 @@ class Anime:
 
 
 THROTTLES = {
+    "shikimori.one": Throttle(0.35),
     "shikimori.io": Throttle(0.35),
     "api.jikan.moe": Throttle(0.5),
     "graphql.anilist.co": Throttle(0.35),
 }
 
 
+@dataclass(frozen=True, slots=True)
+class UpstreamSessions:
+    """Route Russian Shikimori traffic directly and blocked providers via Clash."""
+
+    direct: ClientSession
+    proxied: ClientSession
+    proxy_url: str | None = None
+
+    def session_for_url(self, url: str) -> ClientSession:
+        host = (urlparse(url).hostname or "").lower()
+        return self.direct if host in DIRECT_UPSTREAM_HOSTS else self.proxied
+
+    def request(self, method: str, url: str, **kwargs: Any) -> Any:
+        session = self.session_for_url(url)
+        if session is self.proxied and self.proxy_url:
+            kwargs["proxy"] = self.proxy_url
+        return session.request(method, url, **kwargs)
+
+    def get(self, url: str, **kwargs: Any) -> Any:
+        return self.request("GET", url, **kwargs)
+
+
 async def fetch_json(
-    session: ClientSession,
+    session: UpstreamSessions,
     url: str,
     *,
     params: dict[str, str] | None = None,
@@ -266,20 +362,20 @@ def allowed_link(url: str) -> bool:
     return parsed.scheme == "https" and parsed.netloc in ALLOWED_LINK_HOSTS
 
 
-async def search_shikimori(session: ClientSession, query: str) -> list[Anime]:
+async def search_shikimori(session: UpstreamSessions, query: str) -> list[Anime]:
     params = {"search": query, "limit": "10", "order": "popularity"}
     data = await fetch_json(session, f"{SHIKIMORI_ORIGIN}/api/animes", params=params)
     return [Anime.from_shikimori(item) for item in data]
 
 
-async def search_jikan(session: ClientSession, query: str) -> list[Anime]:
+async def search_jikan(session: UpstreamSessions, query: str) -> list[Anime]:
     params = {"q": query, "limit": "10", "order_by": "members", "sort": "desc", "sfw": "true"}
     data = await fetch_json(session, f"{JIKAN_API}/anime", params=params)
     return [Anime.from_jikan(item) for item in data.get("data") or []]
 
 
 async def search_anime(
-    session: ClientSession, cache: TTLCache[list[Anime]], query: str
+    session: UpstreamSessions, cache: TTLCache[list[Anime]], query: str
 ) -> list[Anime]:
     """Shikimori first (Russian titles), Jikan as fallback when it fails or finds nothing."""
     key = query.casefold()
@@ -313,7 +409,7 @@ async def search_anime(
     return animes
 
 
-async def fetch_shikimori_genres(session: ClientSession, anime_id: int) -> list[str]:
+async def fetch_shikimori_genres(session: UpstreamSessions, anime_id: int) -> list[str]:
     data = await fetch_json(session, f"{SHIKIMORI_ORIGIN}/api/animes/{anime_id}")
     genres = [
         str(genre.get("russian") or genre.get("name") or "") for genre in data.get("genres") or []
@@ -321,7 +417,7 @@ async def fetch_shikimori_genres(session: ClientSession, anime_id: int) -> list[
     return [genre for genre in genres if genre][:4]
 
 
-async def trending_anime(session: ClientSession, cache: TTLCache[list[Anime]]) -> list[Anime]:
+async def trending_anime(session: UpstreamSessions, cache: TTLCache[list[Anime]]) -> list[Anime]:
     """Top-ranked currently airing shows for the webapp idle screen."""
     cached = cache.get("__trending__")
     if cached is not None:
@@ -349,7 +445,7 @@ async def trending_anime(session: ClientSession, cache: TTLCache[list[Anime]]) -
     return animes
 
 
-async def fetch_jikan_pictures(session: ClientSession, mal_id: int) -> list[tuple[str, str]]:
+async def fetch_jikan_pictures(session: UpstreamSessions, mal_id: int) -> list[tuple[str, str]]:
     data = await fetch_json(session, f"{JIKAN_API}/anime/{mal_id}/pictures")
     pairs: list[tuple[str, str]] = []
     for item in data.get("data") or []:
@@ -362,7 +458,7 @@ async def fetch_jikan_pictures(session: ClientSession, mal_id: int) -> list[tupl
 
 
 async def fetch_anilist_covers(
-    session: ClientSession, mal_ids: list[int]
+    session: UpstreamSessions, mal_ids: list[int]
 ) -> dict[int, tuple[str, str]]:
     """Fetch AniList covers in one request, keyed by MyAnimeList id."""
     if not mal_ids:
@@ -403,7 +499,7 @@ def apply_anilist_covers(animes: list[Anime], covers: dict[int, tuple[str, str]]
     ]
 
 
-async def prefer_anilist_covers(session: ClientSession, animes: list[Anime]) -> list[Anime]:
+async def prefer_anilist_covers(session: UpstreamSessions, animes: list[Anime]) -> list[Anime]:
     if not animes:
         return animes
     try:
@@ -414,7 +510,7 @@ async def prefer_anilist_covers(session: ClientSession, animes: list[Anime]) -> 
         return animes
 
 
-async def fetch_anilist_cover(session: ClientSession, mal_id: int) -> list[tuple[str, str]]:
+async def fetch_anilist_cover(session: UpstreamSessions, mal_id: int) -> list[tuple[str, str]]:
     cover = (await fetch_anilist_covers(session, [mal_id])).get(mal_id)
     return [cover] if cover else []
 
@@ -424,7 +520,7 @@ def allowed_image(url: str) -> bool:
     return parsed.scheme == "https" and parsed.netloc in ALLOWED_IMAGE_HOSTS
 
 
-async def collect_posters(session: ClientSession, mal_id: int) -> list[dict[str, str]]:
+async def collect_posters(session: UpstreamSessions, mal_id: int) -> list[dict[str, str]]:
     """Alternative posters from AniList and Jikan (MAL pictures); Shikimori ids match MAL ids."""
     results = await asyncio.gather(
         fetch_anilist_cover(session, mal_id),
@@ -452,7 +548,7 @@ def parse_card_query(text: str) -> str | None:
     if not text.startswith("card:"):
         return None
     card_id = text.removeprefix("card:")
-    if not card_id or not all(ch.isalnum() or ch == "-" for ch in card_id):
+    if not card_id or not all(ch.isalnum() or ch in "-_" for ch in card_id):
         return None
     return card_id
 
@@ -664,7 +760,7 @@ def cleanup_rendered_dir(settings: Settings) -> None:
 
 
 def build_router(
-    settings: Settings, session: ClientSession, cache: TTLCache[list[Anime]]
+    settings: Settings, session: UpstreamSessions, cache: TTLCache[list[Anime]]
 ) -> Router:
     router = Router()
 
@@ -713,26 +809,32 @@ def build_router(
                 logging.info("Inline query %s expired before it could be answered", query.id)
 
         if card_id:
-            meta = load_card_meta(settings, card_id)
-            file_id = as_text(meta.get("file_id"))
-            if not file_id:
-                logging.warning("Inline card %s has no Telegram file_id", card_id)
+            state = decode_card_token(card_id)
+            if not state:
                 await answer([], cache_time=1)
                 return
+            try:
+                raw = await fetch_json(session, f"{SHIKIMORI_ORIGIN}/api/animes/{state.anime_id}")
+                anime = Anime.from_shikimori(as_mapping(raw))
+            except Exception:
+                logging.warning("Inline card %s could not resolve anime", card_id, exc_info=True)
+                await answer([], cache_time=1)
+                return
+            image_url = f"{settings.public_base_url.rstrip('/')}/card/{card_id}.jpg"
             await answer(
                 [
-                    InlineQueryResultCachedPhoto(
+                    InlineQueryResultPhoto(
                         id=f"card-{card_id}",
-                        photo_file_id=file_id,
-                        title=str(meta.get("title") or "Shiki Card"),
+                        photo_url=image_url,
+                        thumbnail_url=image_url,
+                        title=anime.title,
                         description="Готовая карточка из WebApp" if ru else "Card from the WebApp",
-                        caption=card_caption(meta),
+                        caption=caption(anime),
                         parse_mode="HTML",
-                        reply_markup=card_markup(meta),
+                        reply_markup=anime_markup(anime),
                     )
                 ],
-                # Telegram owns this immutable media object, so caching is safe.
-                cache_time=86_400,
+                cache_time=300,
             )
             return
 
@@ -771,7 +873,7 @@ def build_router(
 
 
 async def create_web_app(
-    settings: Settings, session: ClientSession, cache: TTLCache[list[Anime]], bot: Bot
+    settings: Settings, session: UpstreamSessions, cache: TTLCache[list[Anime]], bot: Bot
 ) -> web.Application:
     settings.rendered_dir.mkdir(parents=True, exist_ok=True)
     app = web.Application(client_max_size=8 * 1024 * 1024)
@@ -781,9 +883,144 @@ async def create_web_app(
     trending_cache: TTLCache[list[Anime]] = TTLCache(ttl=1800)
     upload_limiter = SlidingWindowRateLimiter(settings.rendered_uploads_per_hour, 3600)
     rendered_lock = asyncio.Lock()
+    card_locks: dict[str, asyncio.Lock] = {}
+    settings.card_cache_dir.mkdir(parents=True, exist_ok=True)
+
+    async def resolve_card(state: CardState) -> Anime:
+        raw = await fetch_json(session, f"{SHIKIMORI_ORIGIN}/api/animes/{state.anime_id}")
+        anime = (await prefer_anilist_covers(session, [Anime.from_shikimori(as_mapping(raw))]))[0]
+        if not anime.image_url:
+            raise web.HTTPNotFound(text="poster unavailable")
+        if state.poster_index:
+            candidates = [
+                {
+                    "url": anime.image_url,
+                    "thumb": anime.image_preview or anime.image_url,
+                    "source": anime.image_source,
+                }
+            ]
+            seen = {anime.image_url}
+            for poster in await collect_posters(session, state.anime_id):
+                if poster["url"] not in seen:
+                    candidates.append(poster)
+                    seen.add(poster["url"])
+            try:
+                selected = candidates[state.poster_index]
+                anime = replace(
+                    anime,
+                    image_url=selected["url"],
+                    image_preview=selected["thumb"],
+                    image_source=selected["source"],
+                )
+            except (IndexError, KeyError):
+                raise web.HTTPNotFound(text="poster unavailable") from None
+        return anime
+
+    async def fetch_poster(url: str) -> bytes:
+        if not allowed_image(url):
+            raise web.HTTPBadRequest(text="poster host not allowed")
+        async with session.get(
+            url, headers={"User-Agent": USER_AGENT}, allow_redirects=False
+        ) as response:
+            response.raise_for_status()
+            body = bytes(await response.content.read(MAX_PROXY_IMAGE_BYTES + 1))
+        if len(body) > MAX_PROXY_IMAGE_BYTES:
+            raise web.HTTPRequestEntityTooLarge(
+                max_size=MAX_PROXY_IMAGE_BYTES, actual_size=len(body)
+            )
+        return body
+
+    async def ensure_card_jpeg(token: str, state: CardState) -> Path:
+        cache_path = settings.card_cache_dir / f"{hashlib.sha256(token.encode()).hexdigest()}.jpg"
+        if (
+            cache_path.is_file()
+            and time.time() - cache_path.stat().st_mtime <= settings.card_cache_ttl
+        ):
+            return cache_path
+        lock = card_locks.setdefault(token, asyncio.Lock())
+        async with lock:
+            if (
+                cache_path.is_file()
+                and time.time() - cache_path.stat().st_mtime <= settings.card_cache_ttl
+            ):
+                return cache_path
+            anime = await resolve_card(state)
+            poster = await fetch_poster(anime.image_url or "")
+            payload = {
+                "anime": {**anime_payload(anime), "episodes_label": "эп."},
+                "poster": base64.b64encode(poster).decode(),
+                "style": state.style,
+                "titleLanguage": state.language,
+                "options": state.option_values,
+            }
+            try:
+                async with session.direct.post(
+                    settings.renderer_url.rstrip("/") + "/render",
+                    json=payload,
+                    headers={"Authorization": f"Bearer {settings.renderer_token}"},
+                    timeout=ClientTimeout(total=30),
+                ) as response:
+                    if response.status != 200:
+                        raise web.HTTPBadGateway(text="renderer failed")
+                    jpeg = await response.read()
+            except ClientError as exc:
+                raise web.HTTPBadGateway(text="renderer unavailable") from exc
+            if not jpeg.startswith(b"\xff\xd8\xff") or len(jpeg) > MAX_RENDERED_IMAGE_BYTES:
+                raise web.HTTPBadGateway(text="invalid renderer response")
+            temp_path = cache_path.with_suffix(".tmp")
+            temp_path.write_bytes(jpeg)
+            temp_path.replace(cache_path)
+            return cache_path
 
     async def webapp_page(_: web.Request) -> web.FileResponse:
         return web.FileResponse(html_path)
+
+    async def card_page(request: web.Request) -> web.Response:
+        token = request.match_info["token"]
+        state = decode_card_token(token)
+        if not state:
+            raise web.HTTPNotFound()
+        anime = await resolve_card(state)
+        title = html.escape(anime.title)
+        image_url = f"{settings.public_base_url.rstrip('/')}/card/{token}.jpg"
+        webapp_link = f"{settings.public_base_url.rstrip('/')}/webapp?card={token}"
+        page = (
+            '<!doctype html><html><head><meta charset="utf-8">'
+            f'<title>{title}</title><meta property="og:title" content="{title}">'
+            '<meta property="og:description" content="Shiki Cards">'
+            f'<meta property="og:image" content="{image_url}">'
+            '<meta property="og:type" content="website"></head><body>'
+            f'<a href="{webapp_link}">Open Shiki Cards</a>'
+            f'<script>location.replace({json.dumps(webapp_link)})</script></body></html>'
+        )
+        return web.Response(text=page, content_type="text/html")
+
+    async def card_jpeg(request: web.Request) -> web.FileResponse:
+        token = request.match_info["token"]
+        state = decode_card_token(token)
+        if not state:
+            raise web.HTTPNotFound()
+        return web.FileResponse(
+            await ensure_card_jpeg(token, state), headers={"Cache-Control": "public, max-age=86400"}
+        )
+
+    async def card_data(request: web.Request) -> web.Response:
+        token = request.match_info["token"]
+        state = decode_card_token(token)
+        if not state:
+            raise web.HTTPNotFound()
+        anime = await resolve_card(state)
+        return web.json_response(
+            {
+                "anime": anime_payload(anime),
+                "state": {
+                    "style": state.style,
+                    "options": state.option_values,
+                    "language": state.language,
+                    "poster_index": state.poster_index,
+                },
+            }
+        )
 
     def require_webapp(request: web.Request) -> str:
         init_data = request.headers.get("X-Telegram-Init-Data", "")
@@ -797,7 +1034,6 @@ async def create_web_app(
         return web.json_response({"ok": True})
 
     async def search_api(request: web.Request) -> web.Response:
-        require_webapp(request)
         query = (request.query.get("q") or "").strip()
         if len(query) < 2:
             return web.json_response([])
@@ -809,12 +1045,10 @@ async def create_web_app(
         return web.json_response([anime_payload(anime) for anime in animes])
 
     async def trending_api(request: web.Request) -> web.Response:
-        require_webapp(request)
         animes = await trending_anime(session, trending_cache)
         return web.json_response([anime_payload(anime) for anime in animes])
 
     async def genres_api(request: web.Request) -> web.Response:
-        require_webapp(request)
         raw_id = request.match_info["anime_id"]
         if not raw_id.isdigit() or request.query.get("source", "shikimori") != "shikimori":
             return web.json_response({"genres": []})
@@ -826,7 +1060,6 @@ async def create_web_app(
         return web.json_response({"genres": genres})
 
     async def posters_api(request: web.Request) -> web.Response:
-        require_webapp(request)
         raw_id = request.match_info["anime_id"]
         if not raw_id.isdigit():
             return web.json_response({"posters": []})
@@ -958,14 +1191,15 @@ async def create_web_app(
 
     app.router.add_get("/healthz", healthz)
     app.router.add_get("/webapp", webapp_page)
+    app.router.add_get("/card/{token:[A-Za-z0-9_-]+}", card_page)
+    app.router.add_get("/card/{token:[A-Za-z0-9_-]+}.jpg", card_jpeg)
+    app.router.add_get("/api/card/{token:[A-Za-z0-9_-]+}", card_data)
     app.router.add_static("/static/", static_dir, name="static")
     app.router.add_get("/api/search", search_api)
     app.router.add_get("/api/trending", trending_api)
     app.router.add_get("/api/anime/{anime_id}/genres", genres_api)
     app.router.add_get("/api/anime/{anime_id}/posters", posters_api)
     app.router.add_get("/api/image", image_proxy)
-    app.router.add_post("/api/rendered", save_rendered)
-    app.router.add_get("/rendered/{card_id:[A-Za-z0-9-]+}.jpg", rendered_jpeg)
     return app
 
 
@@ -975,13 +1209,15 @@ async def main() -> None:
     cleanup_rendered_dir(settings)
     cache: TTLCache[list[Anime]] = TTLCache(ttl=settings.search_cache_ttl)
 
-    async with ClientSession(
-        timeout=ClientTimeout(total=15), trust_env=settings.proxy_url is not None
-    ) as session:
+    async with (
+        ClientSession(timeout=ClientTimeout(total=15)) as direct_session,
+        ClientSession(timeout=ClientTimeout(total=15)) as proxied_session,
+    ):
+        upstream = UpstreamSessions(direct_session, proxied_session, settings.proxy_url)
         bot_session = AiohttpSession(proxy=settings.proxy_url) if settings.proxy_url else None
         bot = Bot(settings.bot_token, session=bot_session)
         dp = Dispatcher()
-        dp.include_router(build_router(settings, session, cache))
+        dp.include_router(build_router(settings, upstream, cache))
 
         try:
             await bot.set_chat_menu_button(
@@ -992,7 +1228,7 @@ async def main() -> None:
         except Exception:
             logging.warning("failed to set chat menu button", exc_info=True)
 
-        web_app = await create_web_app(settings, session, cache, bot)
+        web_app = await create_web_app(settings, upstream, cache, bot)
         runner = web.AppRunner(web_app)
         await runner.setup()
         site = web.TCPSite(runner, settings.host, settings.port)

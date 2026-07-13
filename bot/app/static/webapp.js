@@ -37,11 +37,37 @@
     ['classic', '#23361a'], ['aurora', '#768c4b'], ['glass', '#a5b992'], ['neon', '#22a06b'], ['vhs', '#53664a'],
     ['manga', '#a7473f'], ['mag', '#d49a35'], ['polaroid', '#d6ccba'], ['print', '#79654c'],
   ];
+  // Static previews keep the picker instant; the full canvas is still the source of truth.
+  const PRESET_PREVIEWS = {
+    classic: 'linear-gradient(145deg,#10220e 0 58%,#7b9a5b 58%)', aurora: 'radial-gradient(circle at 75% 18%,#c5d7ae,#516e3b 72%)',
+    glass: 'linear-gradient(160deg,#526a49,#dce7d4 55%,#23361a)', neon: 'linear-gradient(135deg,#003825,#0b7152 58%,#8bd74c)',
+    vhs: 'repeating-linear-gradient(0deg,#384c31 0 5px,#101810 5px 8px)', manga: 'linear-gradient(135deg,#f5f1e9 0 55%,#27211d 55% 60%,#a7473f 60%)',
+    mag: 'linear-gradient(160deg,#9b4f24 0 25%,#f8d88b 25% 35%,#4a2215 35%)', polaroid: 'linear-gradient(145deg,#f6f1e7 0 20%,#41392e 20% 72%,#f6f1e7 72%)',
+    print: 'linear-gradient(145deg,#ece4d5 0 14%,#79654c 14% 78%,#ece4d5 78%)',
+  };
+  // Text and overlays live in distinct zones per style, rather than one shared corner.
+  const CARD_LAYOUTS = {
+    classic: { score: [678, 42], genres: { minY: 0, maxY: 990, alternateY: 960 } },
+    aurora: { score: [648, 770], genres: { minY: 805, maxY: 990, alternateY: 960 } },
+    glass: { score: [670, 998], genres: { minY: 700, maxY: 990, alternateY: 960 } },
+    neon: { score: [670, 48], genres: { minY: 700, maxY: 990, alternateY: 960 } },
+    vhs: { score: [670, 48], genres: { minY: 700, maxY: 990, alternateY: 960 } },
+    manga: { score: [668, 752], genres: { minY: 790, maxY: 990, alternateY: 960 } },
+    mag: { score: [668, 152], genres: { minY: 700, maxY: 990, alternateY: 960 } },
+    polaroid: { score: [666, 782], genres: { minY: 825, maxY: 990, alternateY: 960 } },
+    print: { score: [668, 752], genres: { minY: 790, maxY: 990, alternateY: 960 } },
+  };
   const HISTORY_KEY = 'shiki:recent';
   const SRC_BADGE = { shikimori: 'SHIKI', mal: 'MAL', anilist: 'AL' };
   const STATUS = { ongoing: T.ongoing, anons: T.anons };
   const { createElement: h, useCallback, useEffect, useMemo, useRef, useState } = window.React;
   const { Alert, Button, Card, Heading, Input, Spinner, Switch, Tag, Text } = window.GlEpkaDS;
+
+  document.body.classList.toggle('mode-telegram', inTelegram);
+  document.body.classList.toggle('mode-browser', !inTelegram);
+  const desktopQuery = window.matchMedia('(min-width: 1025px)');
+  const updateLayout = () => document.body.classList.toggle('layout-desktop', desktopQuery.matches);
+  updateLayout(); desktopQuery.addEventListener?.('change', updateLayout);
 
   tg?.ready();
   tg?.expand();
@@ -50,6 +76,10 @@
   tg?.disableVerticalSwipes?.();
 
   function proxyUrl(url) { return `/api/image?url=${encodeURIComponent(url)}`; }
+  function cardToken(anime, preset, options, titleLanguage, posters, poster) {
+    const state = { a: anime.id, s: preset, o: (options.score ? 1 : 0) | (options.genres ? 2 : 0) | (options.mark ? 4 : 0), l: titleLanguage, p: Math.max(0, posters.findIndex((item) => item.url === poster)) };
+    return btoa(JSON.stringify(state)).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
+  }
   function metaLine(anime) {
     return [anime.year, anime.kind && String(anime.kind).toUpperCase(), anime.episodes && `${anime.episodes} ${T.eps}`].filter(Boolean).join(' · ');
   }
@@ -109,7 +139,7 @@
     }
     return result;
   }
-  async function renderCard(canvas, anime, poster, preset, titleLanguage, options) {
+  async function legacyRenderCard(canvas, anime, poster, preset, titleLanguage, options) {
     const context = canvas.getContext('2d');
     const image = await loadImage(poster || anime.image_url);
     const W = canvas.width, H = canvas.height;
@@ -118,6 +148,7 @@
     const meta = metaLine(anime);
     const palette = { classic: '#23361a', aurora: '#516e3b', glass: '#23361a', neon: '#0b7152', vhs: '#384c31', manga: '#6d342c', mag: '#9b4f24', polaroid: '#41392e', print: '#41392e' };
     const accent = palette[preset] || palette.classic;
+    const layout = CARD_LAYOUTS[preset] || CARD_LAYOUTS.classic;
     context.clearRect(0, 0, W, H);
     let contentX = 42; let contentY = 695; let contentWidth = W - 84; let foreground = '#fff';
     if (preset === 'aurora') {
@@ -145,10 +176,29 @@
     for (const line of lines(context, title, contentWidth, 3)) { context.fillText(line, contentX, y); y += 62; }
     if (subtitle) { context.font = '500 24px Manrope, sans-serif'; context.globalAlpha = .78; context.fillText(lines(context, subtitle, contentWidth, 1)[0] || '', contentX, y + 4); context.globalAlpha = 1; y += 42; }
     if (meta) { context.font = '600 24px Manrope, sans-serif'; context.globalAlpha = .86; context.fillText(meta, contentX, y + 8); context.globalAlpha = 1; y += 48; }
-    if (options.genres && anime.genres?.length) { context.font = '600 19px Manrope, sans-serif'; context.globalAlpha = .78; context.fillText(anime.genres.slice(0, 3).join('  ·  '), contentX, y + 8); context.globalAlpha = 1; }
-    if (options.score && anime.score) { context.font = '700 27px Manrope, sans-serif'; context.fillStyle = preset === 'print' || preset === 'manga' || preset === 'polaroid' || preset === 'aurora' ? accent : '#e5ffb8'; context.textAlign = 'right'; context.fillText(`★ ${anime.score}`, W - 42, 42); context.textAlign = 'left'; }
+    const scoreText = options.score && anime.score ? `★ ${anime.score}` : '';
+    let scoreBox = null;
+    if (scoreText) {
+      context.font = '700 27px Manrope, sans-serif'; context.fillStyle = preset === 'print' || preset === 'manga' || preset === 'polaroid' || preset === 'aurora' ? accent : '#e5ffb8'; context.textAlign = 'right';
+      const scoreWidth = context.measureText(scoreText).width; const [scoreX, scoreY] = layout.score;
+      scoreBox = { left: scoreX - scoreWidth, top: scoreY, right: scoreX, bottom: scoreY + 30 };
+      context.fillText(scoreText, scoreX, scoreY); context.textAlign = 'left';
+    }
+    if (options.genres && anime.genres?.length) {
+      context.font = '600 19px Manrope, sans-serif';
+      const genreText = anime.genres.slice(0, 3).join('  ·  '); const genreWidth = context.measureText(genreText).width;
+      let genreY = Math.min(Math.max(y + 8, layout.genres.minY), layout.genres.maxY);
+      const collides = scoreBox && contentX < scoreBox.right && contentX + genreWidth > scoreBox.left && genreY < scoreBox.bottom && genreY + 24 > scoreBox.top;
+      if (collides) genreY = layout.genres.alternateY;
+      context.fillStyle = foreground; context.globalAlpha = .78; context.fillText(genreText, contentX, genreY); context.globalAlpha = 1;
+    }
     if (options.mark) { context.font = '700 17px Manrope, sans-serif'; context.fillStyle = preset === 'print' || preset === 'manga' || preset === 'polaroid' || preset === 'aurora' ? accent : 'rgba(255,255,255,.62)'; context.fillText('SHIKI · CARDS', contentX, H - 44); }
     context.textBaseline = 'alphabetic';
+  }
+
+  async function renderCard(canvas, anime, poster, preset, titleLanguage, options) {
+    const image = await loadImage(poster || anime.image_url);
+    return window.ShikiCardRenderer.renderCard(canvas, { ...anime, episodes_label: T.eps }, image, preset, titleLanguage, options);
   }
 
   function SearchResult({ anime, onPick }) {
@@ -205,17 +255,17 @@
     );
   }
 
-  function Editor({ anime, onBack, notify }) {
+  function Editor({ anime, initialState, onBack, notify }) {
     const canvasRef = useRef(null);
     const [poster, setPoster] = useState(anime.image_url); const [posters, setPosters] = useState([{ url: anime.image_url, thumb: anime.image_preview || anime.image_url, source: anime.image_source || anime.source }]);
-    const [preset, setPreset] = useState('classic'); const [titleLanguage, setTitleLanguage] = useState(RU && anime.title !== anime.name ? 'ru' : 'orig');
-    const [options, setOptions] = useState({ score: true, genres: true, mark: true }); const [sending, setSending] = useState(false);
+    const [preset, setPreset] = useState(initialState?.style || 'classic'); const [titleLanguage, setTitleLanguage] = useState(initialState?.language || (RU && anime.title !== anime.name ? 'ru' : 'orig'));
+    const [options, setOptions] = useState(initialState?.options || { score: true, genres: true, mark: true }); const [sending, setSending] = useState(false);
     const displayTitle = titleLanguage === 'orig' ? anime.name : anime.title;
     useEffect(() => {
       let active = true;
       apiFetch(`/api/anime/${anime.id}/posters`).then((response) => response.ok ? response.json() : { posters: [] }).then((data) => {
         if (!active) return;
-        setPosters((current) => { const seen = new Set(current.map((item) => item.url)); return [...current, ...(data.posters || []).filter((item) => item.url && !seen.has(item.url))]; });
+        setPosters((current) => { const seen = new Set(current.map((item) => item.url)); const next = [...current, ...(data.posters || []).filter((item) => item.url && !seen.has(item.url))]; if (initialState?.poster_index && next[initialState.poster_index]) setPoster(next[initialState.poster_index].url); return next; });
       }).catch(() => {});
       return () => { active = false; };
     }, [anime.id]);
@@ -234,11 +284,11 @@
       if (sending) return;
       setSending(true); tg?.MainButton?.showProgress?.(false);
       try {
-        const response = await apiFetch('/api/rendered', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: canvasRef.current.toDataURL('image/jpeg', .88), meta: { title: displayTitle, subtitle: anime.name, url: anime.page_url } }) });
-        const data = await response.json(); if (!data.ok) throw new Error(data.error || 'upload failed');
+        const token = cardToken(anime, preset, options, titleLanguage, posters, poster);
+        const cardUrl = `${window.location.origin}/card/${token}`;
         tg?.HapticFeedback?.notificationOccurred?.('success');
-        if (inTelegram && tg?.switchInlineQuery) tg.switchInlineQuery(data.query, ['users', 'groups', 'channels']);
-        else { await navigator.clipboard?.writeText(data.query); notify(`${T.copied}${data.query}`); }
+        if (inTelegram && tg?.switchInlineQuery) tg.switchInlineQuery(`card:${token}`, ['users', 'groups', 'channels']);
+        else window.open(`https://t.me/share/url?url=${encodeURIComponent(cardUrl)}`, '_blank', 'noopener');
       } catch (_) { tg?.HapticFeedback?.notificationOccurred?.('error'); notify(T.shareError); }
       finally { tg?.MainButton?.hideProgress?.(); setSending(false); }
     };
@@ -248,10 +298,11 @@
       key: item.url, className: `poster-choice${poster === item.url ? ' is-selected' : ''}`, type: 'button',
       onClick: () => { setPoster(item.url); tg?.HapticFeedback?.selectionChanged?.(); },
     }, h('img', { src: proxyUrl(item.thumb || item.url), alt: '' }), h('span', { className: 'poster-source' }, SRC_BADGE[item.source] || 'IMG')));
-    const styleChoices = PRESETS.map(([id, color]) => h(Button, {
-      key: id, type: 'button', size: 'sm', variant: preset === id ? 'primary' : 'outline',
+    const styleChoices = PRESETS.map(([id, color]) => h('button', {
+      key: id, className: `style-choice${preset === id ? ' is-selected' : ''}`, type: 'button',
       onClick: () => { setPreset(id); tg?.HapticFeedback?.selectionChanged?.(); },
-    }, h('span', { className: 'style-dot', style: { background: color } }), T.presets[id]));
+      'aria-pressed': preset === id,
+    }, h('span', { className: 'style-thumbnail', style: { background: PRESET_PREVIEWS[id] } }), h('span', { className: 'style-label' }, h('span', { className: 'style-dot', style: { background: color } }), T.presets[id])));
     const switches = [['score', T.score], ['genres', T.genres], ['mark', T.mark]].map(([id, label]) => h(Switch, {
       key: id, label, checked: options[id], onCheckedChange: (checked) => setOptions((current) => ({ ...current, [id]: checked })),
     }));
@@ -261,9 +312,9 @@
         h('div', { className: 'editor-title', key: 'title' }, [h(Heading, { as: 'h1', size: 'md', key: 'heading' }, displayTitle), h('p', { key: 'meta' }, metaLine(anime))]),
       ]),
       h(Card, { className: 'preview-card', variant: 'elevated', key: 'preview' }, h('button', { className: 'canvas-button', type: 'button', onClick: () => { const link = document.createElement('a'); link.href = canvasRef.current.toDataURL('image/jpeg', .92); link.target = '_blank'; link.click(); }, 'aria-label': 'Open card image' }, h('canvas', { ref: canvasRef, width: 720, height: 1080 }))),
+      h('section', { className: 'editor-section style-section', key: 'style' }, [h('h2', { key: 'heading' }, T.style), h('div', { className: 'preset-carousel', key: 'choices' }, styleChoices)]),
       h('section', { className: 'editor-section', key: 'poster' }, [h('h2', { key: 'heading' }, T.poster), h('div', { className: 'poster-strip', key: 'choices' }, posterChoices)]),
       anime.title !== anime.name ? h('section', { className: 'editor-section', key: 'title-language' }, [h('h2', { key: 'heading' }, T.title), h('div', { className: 'history', key: 'choices' }, [['ru', T.titleRu], ['orig', T.titleOrig]].map(([id, label]) => h(Button, { key: id, type: 'button', size: 'sm', variant: titleLanguage === id ? 'primary' : 'outline', onClick: () => setTitleLanguage(id) }, label)))]) : null,
-      h('section', { className: 'editor-section', key: 'style' }, [h('h2', { key: 'heading' }, T.style), h('div', { className: 'preset-grid', key: 'choices' }, styleChoices)]),
       h('section', { className: 'editor-section', key: 'elements' }, [h('h2', { key: 'heading' }, T.elements), h('div', { className: 'toggle-list', key: 'switches' }, switches)]),
       h('div', { className: 'action-stack', key: 'actions' }, [h(Button, { key: 'share', type: 'button', size: 'lg', loading: sending, onClick: share }, sending ? T.uploading : T.share), !inTelegram && h(Button, { key: 'download', type: 'button', size: 'lg', variant: 'outline', onClick: download }, T.download)]),
     ]);
@@ -272,7 +323,8 @@
   function App() {
     const [selected, setSelected] = useState(null); const [toast, setToast] = useState('');
     const notify = useCallback((message) => { setToast(message); window.setTimeout(() => setToast(''), 2800); }, []);
-    return h(window.React.Fragment, null, selected ? h(Editor, { anime: selected, onBack: () => setSelected(null), notify }) : h(SearchScreen, { onPick: setSelected }), toast ? h('div', { className: 'toast', role: 'status' }, toast) : null);
+    useEffect(() => { const token = new URLSearchParams(window.location.search).get('card'); if (!token) return; apiFetch(`/api/card/${token}`).then((response) => response.ok ? response.json() : null).then((data) => { if (data?.anime) setSelected({ anime: data.anime, initialState: data.state }); }).catch(() => {}); }, []);
+    return h(window.React.Fragment, null, selected ? h(Editor, { ...selected, onBack: () => setSelected(null), notify }) : h(SearchScreen, { onPick: (anime) => setSelected({ anime }) }), toast ? h('div', { className: 'toast', role: 'status' }, toast) : null);
   }
 
   window.ReactDOM.createRoot(document.getElementById('ds-root')).render(h(App));

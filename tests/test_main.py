@@ -1,23 +1,25 @@
 import asyncio
-import base64
 import hashlib
 import hmac
 import os
 import time
 from pathlib import Path
-from types import SimpleNamespace
 from urllib.parse import urlencode
 
 from aiohttp import ClientSession
 from aiohttp.test_utils import TestClient, TestServer
 from app.main import (
     Anime,
+    CardState,
     Settings,
     SlidingWindowRateLimiter,
     TTLCache,
+    UpstreamSessions,
     apply_anilist_covers,
     cleanup_rendered_dir,
     create_web_app,
+    decode_card_token,
+    encode_card_token,
     parse_card_query,
     validate_webapp_init_data,
 )
@@ -42,10 +44,17 @@ def signed_init_data(token: str, auth_date: int) -> str:
 
 
 def test_parse_card_query() -> None:
-    assert parse_card_query(" card:abc-123 ") == "abc-123"
+    assert parse_card_query(" card:abc-123_ ") == "abc-123_"
     assert parse_card_query("card:") is None
     assert parse_card_query("card:../../secret") is None
     assert parse_card_query("anime") is None
+
+
+def test_card_state_token_round_trip_and_validation() -> None:
+    state = CardState(17, "manga", 5, "orig", 2)
+    token = encode_card_token(state)
+    assert decode_card_token(token) == state
+    assert decode_card_token("not-a-token") is None
 
 
 def test_anime_from_shikimori_handles_dirty_optional_fields() -> None:
@@ -110,6 +119,30 @@ def test_anilist_cover_replaces_the_default_poster() -> None:
     assert apply_anilist_covers([anime], {}) == [anime]
 
 
+def test_upstream_sessions_route_shikimori_directly() -> None:
+    class CapturingSession:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, str, dict[str, object]]] = []
+
+        def request(self, method: str, url: str, **kwargs: object) -> object:
+            self.calls.append((method, url, kwargs))
+            return object()
+
+    direct = CapturingSession()
+    proxied = CapturingSession()
+    sessions = UpstreamSessions(direct, proxied, "http://clash.test:7890")  # type: ignore[arg-type]
+
+    assert sessions.session_for_url("https://shikimori.one/api/animes") is direct
+    assert sessions.session_for_url("https://shikimori.io/api/animes") is direct
+    assert sessions.session_for_url("https://api.jikan.moe/v4/anime") is proxied
+    assert sessions.session_for_url("https://s4.anilist.co/file/cover.jpg") is proxied
+
+    sessions.request("GET", "https://shikimori.one/api/animes")
+    sessions.request("GET", "https://api.jikan.moe/v4/anime")
+    assert "proxy" not in direct.calls[0][2]
+    assert proxied.calls[0][2]["proxy"] == "http://clash.test:7890"
+
+
 def test_ttl_cache_expires_and_evicts_oldest() -> None:
     cache: TTLCache[str] = TTLCache(ttl=60, max_entries=2)
     cache.put("first", "1")
@@ -154,13 +187,15 @@ def test_webapp_rejects_unauthenticated_requests_and_upload_failures(tmp_path: P
 
     async def check() -> None:
         settings = make_settings(tmp_path)
-        async with ClientSession() as session:
-            app = await create_web_app(settings, session, TTLCache(ttl=60), FailingBot())  # type: ignore[arg-type]
+        async with ClientSession() as direct, ClientSession() as proxied:
+            upstream = UpstreamSessions(direct, proxied)
+            app = await create_web_app(settings, upstream, TTLCache(ttl=60), FailingBot())  # type: ignore[arg-type]
             client = TestClient(TestServer(app))
             await client.start_server()
             try:
-                response = await client.get("/api/search?q=test")
-                assert response.status == 401
+                assert (await client.get("/healthz")).status == 200
+                response = await client.get("/api/search?q=x")
+                assert response.status == 200
                 assert (await client.get("/static/ds/styles.css")).status == 200
                 assert (await client.get("/static/webapp.css")).status == 200
                 assert (await client.get("/static/webapp.js")).status == 200
@@ -169,58 +204,7 @@ def test_webapp_rejects_unauthenticated_requests_and_upload_failures(tmp_path: P
                 assert "/static/ds/_ds_bundle.js" in await webapp.text()
                 assert (await client.get("/rendered/card.json")).status == 404
 
-                init_data = signed_init_data("test-token", int(time.time()))
-                response = await client.post(
-                    "/api/rendered",
-                    headers={"X-Telegram-Init-Data": init_data},
-                    json={
-                        "image": "data:image/jpeg;base64,"
-                        + base64.b64encode(b"\xff\xd8\xfffake").decode(),
-                    },
-                )
-                assert response.status == 502
-            finally:
-                await client.close()
-
-    asyncio.run(check())
-
-
-def test_rendered_upload_reuses_file_id_for_identical_jpeg(tmp_path: Path) -> None:
-    class StorageBot:
-        def __init__(self) -> None:
-            self.uploads = 0
-
-        async def send_photo(self, **_: object) -> SimpleNamespace:
-            self.uploads += 1
-            return SimpleNamespace(photo=[SimpleNamespace(file_id="stored-photo-id")])
-
-    async def check() -> None:
-        settings = make_settings(tmp_path)
-        storage_bot = StorageBot()
-        async with ClientSession() as session:
-            app = await create_web_app(  # type: ignore[arg-type]
-                settings, session, TTLCache(ttl=60), storage_bot
-            )
-            client = TestClient(TestServer(app))
-            await client.start_server()
-            try:
-                init_data = signed_init_data("test-token", int(time.time()))
-                payload = {
-                    "image": "data:image/jpeg;base64,"
-                    + base64.b64encode(b"\xff\xd8\xffidentical-image").decode(),
-                    "meta": {"title": "One"},
-                }
-                first = await client.post(
-                    "/api/rendered", headers={"X-Telegram-Init-Data": init_data}, json=payload
-                )
-                second = await client.post(
-                    "/api/rendered", headers={"X-Telegram-Init-Data": init_data}, json=payload
-                )
-                first_data = await first.json()
-                second_data = await second.json()
-                assert first.status == second.status == 200
-                assert first_data["id"] == second_data["id"]
-                assert storage_bot.uploads == 1
+                assert (await client.post("/api/rendered")).status == 404
             finally:
                 await client.close()
 

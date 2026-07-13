@@ -1,6 +1,6 @@
 # Shiki Cards Bot
 
-Telegram inline-бот и WebApp для поиска аниме на Shikimori (с фолбэком на Jikan) и создания карточек для отправки в чаты.
+Telegram inline-бот и WebApp для поиска аниме на Shikimori и создания карточек для отправки в чаты.
 
 ## Локальный запуск
 
@@ -21,4 +21,23 @@ PYTHONPATH=bot uv run python -m app.main
 cp .env.example .env
 # Заполните BOT_TOKEN, PUBLIC_BASE_URL и STORAGE_CHAT_ID
 docker compose -f compose.dev.yml up --build
+```
+
+## Продакшен: сеть и split egress
+
+В Cloudflare для домена приложения используйте **DNS only** (серое облако), а TLS
+терминируйте на origin через Traefik/Let's Encrypt. После переключения проверьте
+`https://<домен>/healthz` из обычного браузера и из Telegram.
+
+`PROXY_URL` нужен только для заблокированных исходящих направлений: Bot API,
+Jikan, AniList и CDN MAL/AniList. Shikimori (`shikimori.one`) приложение вызывает
+напрямую. Не задавайте `HTTP_PROXY` или `HTTPS_PROXY` контейнеру: они возвращают
+Shikimori в медленный глобальный туннель. На Docker-хосте Clash/Mihomo должен
+слушать bridge-доступный `host.docker.internal:7890`.
+
+После деплоя проверьте health endpoint и Telegram Bot API через прокси:
+
+```bash
+curl --fail https://<домен>/healthz
+# Бот должен отвечать на /start; это также подтверждает getMe/polling через PROXY_URL.
 ```
