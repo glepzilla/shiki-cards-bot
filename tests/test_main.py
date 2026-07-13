@@ -109,7 +109,7 @@ def test_anilist_cover_replaces_the_default_poster() -> None:
     assert apply_anilist_covers([anime], {}) == [anime]
 
 
-def test_upstream_sessions_direct_russian_apis_and_proxy_other_providers() -> None:
+def test_upstream_sessions_send_all_provider_requests_directly() -> None:
     class CapturingSession:
         def __init__(self) -> None:
             self.calls: list[tuple[str, str, dict[str, object]]] = []
@@ -119,17 +119,18 @@ def test_upstream_sessions_direct_russian_apis_and_proxy_other_providers() -> No
             return object()
 
     direct = CapturingSession()
-    proxied = CapturingSession()
-    sessions = UpstreamSessions(direct, proxied, "http://clash.test:7890")  # type: ignore[arg-type]
+    sessions = UpstreamSessions(direct)  # type: ignore[arg-type]
 
-    sessions.request("GET", "https://shikimori.io/api/animes")
-    sessions.request("GET", "https://api.jikan.moe/v4/anime")
-    sessions.request("GET", "https://graphql.anilist.co")
-    sessions.request("GET", "https://s4.anilist.co/file/cover.jpg")
-    sessions.request("GET", "https://cdn.myanimelist.net/images/cover.jpg")
-    assert len(direct.calls) == 4
+    for url in (
+        "https://shikimori.io/api/animes",
+        "https://api.jikan.moe/v4/anime",
+        "https://graphql.anilist.co",
+        "https://s4.anilist.co/file/cover.jpg",
+        "https://cdn.myanimelist.net/images/cover.jpg",
+    ):
+        sessions.request("GET", url)
+    assert len(direct.calls) == 5
     assert all("proxy" not in call[2] for call in direct.calls)
-    assert proxied.calls[0][2]["proxy"] == "http://clash.test:7890"
 
 
 def test_ttl_cache_expires_and_evicts_oldest() -> None:
@@ -176,8 +177,8 @@ def test_webapp_rejects_unauthenticated_requests_and_upload_failures(tmp_path: P
 
     async def check() -> None:
         settings = make_settings(tmp_path)
-        async with ClientSession() as direct, ClientSession() as proxied:
-            upstream = UpstreamSessions(direct, proxied)
+        async with ClientSession() as direct:
+            upstream = UpstreamSessions(direct)
             app = await create_web_app(settings, upstream, TTLCache(ttl=60), FailingBot())  # type: ignore[arg-type]
             client = TestClient(TestServer(app))
             await client.start_server()

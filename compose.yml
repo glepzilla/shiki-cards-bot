@@ -18,7 +18,7 @@ services:
     environment:
       # The proxy runs on the Docker host. It must listen on the Docker bridge,
       # not only on the host's loopback address (see README).
-      # Application code proxies only Telegram and the MAL image CDN.
+      # Application code uses this only for Telegram Bot API traffic.
       PROXY_URL: http://host.docker.internal:7890
     extra_hosts:
       - host.docker.internal:host-gateway

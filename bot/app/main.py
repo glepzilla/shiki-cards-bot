@@ -53,13 +53,6 @@ ALLOWED_IMAGE_HOSTS = {
     "s4.anilist.co",
 }
 ALLOWED_LINK_HOSTS = {"shikimori.one", "shikimori.io", "myanimelist.net"}
-# These provider APIs and AniList's image CDN are reachable from the VPS without Clash.
-DIRECT_UPSTREAM_HOSTS = {
-    "shikimori.io",
-    "api.jikan.moe",
-    "graphql.anilist.co",
-    "s4.anilist.co",
-}
 
 JIKAN_STATUS = {
     "Currently Airing": "ongoing",
@@ -218,18 +211,12 @@ THROTTLES = {
 
 @dataclass(frozen=True, slots=True)
 class UpstreamSessions:
-    """Use direct Russian APIs and proxy only the providers that need it."""
+    """Direct session for provider APIs; only Telegram uses Clash."""
 
     direct: ClientSession
-    proxied: ClientSession
-    proxy_url: str | None = None
 
     def request(self, method: str, url: str, **kwargs: Any) -> Any:
-        host = (urlparse(url).hostname or "").lower()
-        session = self.direct if host in DIRECT_UPSTREAM_HOSTS else self.proxied
-        if session is self.proxied and self.proxy_url:
-            kwargs["proxy"] = self.proxy_url
-        return session.request(method, url, **kwargs)
+        return self.direct.request(method, url, **kwargs)
 
     def get(self, url: str, **kwargs: Any) -> Any:
         return self.request("GET", url, **kwargs)
@@ -1002,11 +989,8 @@ async def main() -> None:
     cleanup_rendered_dir(settings)
     cache: TTLCache[list[Anime]] = TTLCache(ttl=settings.search_cache_ttl)
 
-    async with (
-        ClientSession(timeout=ClientTimeout(total=15)) as direct_session,
-        ClientSession(timeout=ClientTimeout(total=15)) as proxied_session,
-    ):
-        upstream = UpstreamSessions(direct_session, proxied_session, settings.proxy_url)
+    async with ClientSession(timeout=ClientTimeout(total=15)) as direct_session:
+        upstream = UpstreamSessions(direct_session)
         bot_session = AiohttpSession(proxy=settings.proxy_url) if settings.proxy_url else None
         bot = Bot(settings.bot_token, session=bot_session)
         dp = Dispatcher()
