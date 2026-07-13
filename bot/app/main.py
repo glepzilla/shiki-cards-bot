@@ -289,8 +289,8 @@ class UpstreamSessions:
         host = (urlparse(url).hostname or "").lower()
         return self.direct if host in DIRECT_UPSTREAM_HOSTS else self.proxied
 
-    def request(self, method: str, url: str, **kwargs: Any) -> Any:
-        session = self.session_for_url(url)
+    def request(self, method: str, url: str, *, force_proxy: bool = False, **kwargs: Any) -> Any:
+        session = self.proxied if force_proxy else self.session_for_url(url)
         if session is self.proxied and self.proxy_url:
             kwargs["proxy"] = self.proxy_url
         return session.request(method, url, **kwargs)
@@ -321,6 +321,9 @@ async def fetch_json(
                 json=json_payload,
                 headers=headers,
                 timeout=ClientTimeout(total=UPSTREAM_REQUEST_TIMEOUT),
+                # Shikimori is normally direct; retry it through Clash if the
+                # origin route is temporarily unavailable from this VPS.
+                force_proxy=attempt == 1 and urlparse(url).hostname in DIRECT_UPSTREAM_HOSTS,
             ) as resp:
                 if attempt == 0 and (resp.status == 429 or 500 <= resp.status < 600):
                     if resp.status == 429:
