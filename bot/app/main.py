@@ -37,7 +37,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.cache import SlidingWindowRateLimiter, Throttle, TTLCache
 
-SHIKIMORI_ORIGIN = "https://shikimori.one"
+SHIKIMORI_ORIGIN = "https://shikimori.io"
 MAL_ORIGIN = "https://myanimelist.net"
 JIKAN_API = "https://api.jikan.moe/v4"
 ANILIST_API = "https://graphql.anilist.co"
@@ -53,6 +53,8 @@ ALLOWED_IMAGE_HOSTS = {
     "s4.anilist.co",
 }
 ALLOWED_LINK_HOSTS = {"shikimori.one", "shikimori.io", "myanimelist.net"}
+# These Russian APIs are reachable from the VPS without Clash.
+DIRECT_UPSTREAM_HOSTS = {"shikimori.io", "api.jikan.moe"}
 
 JIKAN_STATUS = {
     "Currently Airing": "ongoing",
@@ -211,15 +213,18 @@ THROTTLES = {
 
 @dataclass(frozen=True, slots=True)
 class UpstreamSessions:
-    """Send all public upstream traffic through one explicit Clash proxy."""
+    """Use direct Russian APIs and proxy only the providers that need it."""
 
-    external: ClientSession
+    direct: ClientSession
+    proxied: ClientSession
     proxy_url: str | None = None
 
     def request(self, method: str, url: str, **kwargs: Any) -> Any:
-        if self.proxy_url:
+        host = (urlparse(url).hostname or "").lower()
+        session = self.direct if host in DIRECT_UPSTREAM_HOSTS else self.proxied
+        if session is self.proxied and self.proxy_url:
             kwargs["proxy"] = self.proxy_url
-        return self.external.request(method, url, **kwargs)
+        return session.request(method, url, **kwargs)
 
     def get(self, url: str, **kwargs: Any) -> Any:
         return self.request("GET", url, **kwargs)
@@ -992,8 +997,11 @@ async def main() -> None:
     cleanup_rendered_dir(settings)
     cache: TTLCache[list[Anime]] = TTLCache(ttl=settings.search_cache_ttl)
 
-    async with ClientSession(timeout=ClientTimeout(total=15)) as external_session:
-        upstream = UpstreamSessions(external_session, settings.proxy_url)
+    async with (
+        ClientSession(timeout=ClientTimeout(total=15)) as direct_session,
+        ClientSession(timeout=ClientTimeout(total=15)) as proxied_session,
+    ):
+        upstream = UpstreamSessions(direct_session, proxied_session, settings.proxy_url)
         bot_session = AiohttpSession(proxy=settings.proxy_url) if settings.proxy_url else None
         bot = Bot(settings.bot_token, session=bot_session)
         dp = Dispatcher()

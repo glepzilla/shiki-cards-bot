@@ -109,7 +109,7 @@ def test_anilist_cover_replaces_the_default_poster() -> None:
     assert apply_anilist_covers([anime], {}) == [anime]
 
 
-def test_upstream_sessions_proxy_every_public_provider() -> None:
+def test_upstream_sessions_direct_russian_apis_and_proxy_other_providers() -> None:
     class CapturingSession:
         def __init__(self) -> None:
             self.calls: list[tuple[str, str, dict[str, object]]] = []
@@ -118,13 +118,16 @@ def test_upstream_sessions_proxy_every_public_provider() -> None:
             self.calls.append((method, url, kwargs))
             return object()
 
-    external = CapturingSession()
-    sessions = UpstreamSessions(external, "http://clash.test:7890")  # type: ignore[arg-type]
+    direct = CapturingSession()
+    proxied = CapturingSession()
+    sessions = UpstreamSessions(direct, proxied, "http://clash.test:7890")  # type: ignore[arg-type]
 
-    sessions.request("GET", "https://shikimori.one/api/animes")
+    sessions.request("GET", "https://shikimori.io/api/animes")
     sessions.request("GET", "https://api.jikan.moe/v4/anime")
-    assert len(external.calls) == 2
-    assert all(call[2]["proxy"] == "http://clash.test:7890" for call in external.calls)
+    sessions.request("GET", "https://graphql.anilist.co")
+    assert len(direct.calls) == 2
+    assert all("proxy" not in call[2] for call in direct.calls)
+    assert proxied.calls[0][2]["proxy"] == "http://clash.test:7890"
 
 
 def test_ttl_cache_expires_and_evicts_oldest() -> None:
@@ -171,8 +174,8 @@ def test_webapp_rejects_unauthenticated_requests_and_upload_failures(tmp_path: P
 
     async def check() -> None:
         settings = make_settings(tmp_path)
-        async with ClientSession() as direct:
-            upstream = UpstreamSessions(direct)
+        async with ClientSession() as direct, ClientSession() as proxied:
+            upstream = UpstreamSessions(direct, proxied)
             app = await create_web_app(settings, upstream, TTLCache(ttl=60), FailingBot())  # type: ignore[arg-type]
             client = TestClient(TestServer(app))
             await client.start_server()
