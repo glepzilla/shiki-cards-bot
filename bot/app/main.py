@@ -61,6 +61,8 @@ ALLOWED_IMAGE_HOSTS = {
     "s4.anilist.co",
 }
 ALLOWED_LINK_HOSTS = {"shikimori.one", "shikimori.io", "myanimelist.net"}
+# Direct access from the VPS to AniList's Cloudflare image edge is unreliable.
+PROXIED_IMAGE_HOSTS = {"s4.anilist.co"}
 
 JIKAN_STATUS = {
     "Currently Airing": "ongoing",
@@ -864,9 +866,13 @@ async def create_web_app(
         parsed = urlparse(url)
         if parsed.scheme != "https" or parsed.netloc not in ALLOWED_IMAGE_HOSTS:
             return web.Response(status=400, text="image host not allowed")
-        async with session.get(
-            url, headers={"User-Agent": USER_AGENT}, allow_redirects=False
-        ) as resp:
+        request_options: dict[str, Any] = {
+            "headers": {"User-Agent": USER_AGENT},
+            "allow_redirects": False,
+        }
+        if parsed.netloc in PROXIED_IMAGE_HOSTS and settings.proxy_url:
+            request_options["proxy"] = settings.proxy_url
+        async with session.get(url, **request_options) as resp:
             resp.raise_for_status()
             try:
                 content_length = int(resp.headers.get("Content-Length") or 0)

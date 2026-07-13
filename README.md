@@ -29,11 +29,11 @@ docker compose -f compose.dev.yml up --build
 терминируйте на origin через Traefik/Let's Encrypt. После переключения проверьте
 `https://<домен>/healthz` из обычного браузера и из Telegram.
 
-Shikimori (`shikimori.io`), Jikan, AniList и все CDN постеров вызываются
-напрямую: они доступны с VPS. `PROXY_URL` применяется только к Telegram Bot API.
-Не задавайте `HTTP_PROXY` или `HTTPS_PROXY` контейнеру: прокси применяется явно
-только в коде. На Docker-хосте Clash/Mihomo должен слушать bridge-доступный
-`host.docker.internal:7890`.
+Shikimori (`shikimori.io`), Jikan, AniList API и CDN MAL вызываются напрямую.
+`PROXY_URL` применяется к Telegram Bot API и `s4.anilist.co`: прямой маршрут VPS
+к его Cloudflare edge нестабилен. Не задавайте `HTTP_PROXY` или `HTTPS_PROXY`
+контейнеру: прокси применяется явно только в коде. На Docker-хосте Clash/Mihomo
+должен слушать bridge-доступный `host.docker.internal:7890`.
 
 После деплоя проверьте health endpoint и Telegram Bot API через прокси:
 
