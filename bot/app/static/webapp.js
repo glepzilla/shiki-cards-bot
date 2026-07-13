@@ -76,10 +76,6 @@
   tg?.disableVerticalSwipes?.();
 
   function proxyUrl(url) { return `/api/image?url=${encodeURIComponent(url)}`; }
-  function cardToken(anime, preset, options, titleLanguage, posters, poster) {
-    const state = { a: anime.id, s: preset, o: (options.score ? 1 : 0) | (options.genres ? 2 : 0) | (options.mark ? 4 : 0), l: titleLanguage, p: Math.max(0, posters.findIndex((item) => item.url === poster)) };
-    return btoa(JSON.stringify(state)).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
-  }
   function metaLine(anime) {
     return [anime.year, anime.kind && String(anime.kind).toUpperCase(), anime.episodes && `${anime.episodes} ${T.eps}`].filter(Boolean).join(' · ');
   }
@@ -197,8 +193,7 @@
   }
 
   async function renderCard(canvas, anime, poster, preset, titleLanguage, options) {
-    const image = await loadImage(poster || anime.image_url);
-    return window.ShikiCardRenderer.renderCard(canvas, { ...anime, episodes_label: T.eps }, image, preset, titleLanguage, options);
+    return legacyRenderCard(canvas, anime, poster, preset, titleLanguage, options);
   }
 
   function SearchResult({ anime, onPick }) {
@@ -255,17 +250,17 @@
     );
   }
 
-  function Editor({ anime, initialState, onBack, notify }) {
+  function Editor({ anime, onBack, notify }) {
     const canvasRef = useRef(null);
     const [poster, setPoster] = useState(anime.image_url); const [posters, setPosters] = useState([{ url: anime.image_url, thumb: anime.image_preview || anime.image_url, source: anime.image_source || anime.source }]);
-    const [preset, setPreset] = useState(initialState?.style || 'classic'); const [titleLanguage, setTitleLanguage] = useState(initialState?.language || (RU && anime.title !== anime.name ? 'ru' : 'orig'));
-    const [options, setOptions] = useState(initialState?.options || { score: true, genres: true, mark: true }); const [sending, setSending] = useState(false);
+    const [preset, setPreset] = useState('classic'); const [titleLanguage, setTitleLanguage] = useState(RU && anime.title !== anime.name ? 'ru' : 'orig');
+    const [options, setOptions] = useState({ score: true, genres: true, mark: true }); const [sending, setSending] = useState(false);
     const displayTitle = titleLanguage === 'orig' ? anime.name : anime.title;
     useEffect(() => {
       let active = true;
       apiFetch(`/api/anime/${anime.id}/posters`).then((response) => response.ok ? response.json() : { posters: [] }).then((data) => {
         if (!active) return;
-        setPosters((current) => { const seen = new Set(current.map((item) => item.url)); const next = [...current, ...(data.posters || []).filter((item) => item.url && !seen.has(item.url))]; if (initialState?.poster_index && next[initialState.poster_index]) setPoster(next[initialState.poster_index].url); return next; });
+        setPosters((current) => { const seen = new Set(current.map((item) => item.url)); return [...current, ...(data.posters || []).filter((item) => item.url && !seen.has(item.url))]; });
       }).catch(() => {});
       return () => { active = false; };
     }, [anime.id]);
@@ -284,11 +279,11 @@
       if (sending) return;
       setSending(true); tg?.MainButton?.showProgress?.(false);
       try {
-        const token = cardToken(anime, preset, options, titleLanguage, posters, poster);
-        const cardUrl = `${window.location.origin}/card/${token}`;
+        const response = await apiFetch('/api/rendered', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: canvasRef.current.toDataURL('image/jpeg', .88), meta: { title: displayTitle, subtitle: anime.name, url: anime.page_url } }) });
+        const data = await response.json(); if (!data.ok) throw new Error(data.error || 'upload failed');
         tg?.HapticFeedback?.notificationOccurred?.('success');
-        if (inTelegram && tg?.switchInlineQuery) tg.switchInlineQuery(`card:${token}`, ['users', 'groups', 'channels']);
-        else window.open(`https://t.me/share/url?url=${encodeURIComponent(cardUrl)}`, '_blank', 'noopener');
+        if (inTelegram && tg?.switchInlineQuery) tg.switchInlineQuery(data.query, ['users', 'groups', 'channels']);
+        else { await navigator.clipboard?.writeText(data.query); notify(`${T.copied}${data.query}`); }
       } catch (_) { tg?.HapticFeedback?.notificationOccurred?.('error'); notify(T.shareError); }
       finally { tg?.MainButton?.hideProgress?.(); setSending(false); }
     };
@@ -323,8 +318,7 @@
   function App() {
     const [selected, setSelected] = useState(null); const [toast, setToast] = useState('');
     const notify = useCallback((message) => { setToast(message); window.setTimeout(() => setToast(''), 2800); }, []);
-    useEffect(() => { const token = new URLSearchParams(window.location.search).get('card'); if (!token) return; apiFetch(`/api/card/${token}`).then((response) => response.ok ? response.json() : null).then((data) => { if (data?.anime) setSelected({ anime: data.anime, initialState: data.state }); }).catch(() => {}); }, []);
-    return h(window.React.Fragment, null, selected ? h(Editor, { ...selected, onBack: () => setSelected(null), notify }) : h(SearchScreen, { onPick: (anime) => setSelected({ anime }) }), toast ? h('div', { className: 'toast', role: 'status' }, toast) : null);
+    return h(window.React.Fragment, null, selected ? h(Editor, { anime: selected, onBack: () => setSelected(null), notify }) : h(SearchScreen, { onPick: setSelected }), toast ? h('div', { className: 'toast', role: 'status' }, toast) : null);
   }
 
   window.ReactDOM.createRoot(document.getElementById('ds-root')).render(h(App));

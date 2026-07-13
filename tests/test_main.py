@@ -10,7 +10,6 @@ from aiohttp import ClientSession
 from aiohttp.test_utils import TestClient, TestServer
 from app.main import (
     Anime,
-    CardState,
     Settings,
     SlidingWindowRateLimiter,
     TTLCache,
@@ -18,8 +17,6 @@ from app.main import (
     apply_anilist_covers,
     cleanup_rendered_dir,
     create_web_app,
-    decode_card_token,
-    encode_card_token,
     parse_card_query,
     validate_webapp_init_data,
 )
@@ -44,17 +41,10 @@ def signed_init_data(token: str, auth_date: int) -> str:
 
 
 def test_parse_card_query() -> None:
-    assert parse_card_query(" card:abc-123_ ") == "abc-123_"
+    assert parse_card_query(" card:abc-123 ") == "abc-123"
     assert parse_card_query("card:") is None
     assert parse_card_query("card:../../secret") is None
     assert parse_card_query("anime") is None
-
-
-def test_card_state_token_round_trip_and_validation() -> None:
-    state = CardState(17, "manga", 5, "orig", 2)
-    token = encode_card_token(state)
-    assert decode_card_token(token) == state
-    assert decode_card_token("not-a-token") is None
 
 
 def test_anime_from_shikimori_handles_dirty_optional_fields() -> None:
@@ -129,14 +119,12 @@ def test_upstream_sessions_proxy_every_public_provider() -> None:
             return object()
 
     external = CapturingSession()
-    internal = CapturingSession()
-    sessions = UpstreamSessions(external, internal, "http://clash.test:7890")  # type: ignore[arg-type]
+    sessions = UpstreamSessions(external, "http://clash.test:7890")  # type: ignore[arg-type]
 
     sessions.request("GET", "https://shikimori.one/api/animes")
     sessions.request("GET", "https://api.jikan.moe/v4/anime")
     assert len(external.calls) == 2
     assert all(call[2]["proxy"] == "http://clash.test:7890" for call in external.calls)
-    assert not internal.calls
 
 
 def test_ttl_cache_expires_and_evicts_oldest() -> None:
@@ -183,8 +171,8 @@ def test_webapp_rejects_unauthenticated_requests_and_upload_failures(tmp_path: P
 
     async def check() -> None:
         settings = make_settings(tmp_path)
-        async with ClientSession() as direct, ClientSession() as proxied:
-            upstream = UpstreamSessions(direct, proxied)
+        async with ClientSession() as direct:
+            upstream = UpstreamSessions(direct)
             app = await create_web_app(settings, upstream, TTLCache(ttl=60), FailingBot())  # type: ignore[arg-type]
             client = TestClient(TestServer(app))
             await client.start_server()
@@ -200,7 +188,7 @@ def test_webapp_rejects_unauthenticated_requests_and_upload_failures(tmp_path: P
                 assert "/static/ds/_ds_bundle.js" in await webapp.text()
                 assert (await client.get("/rendered/card.json")).status == 404
 
-                assert (await client.post("/api/rendered")).status == 404
+                assert (await client.post("/api/rendered")).status == 401
             finally:
                 await client.close()
 

@@ -24,6 +24,7 @@ from aiogram.types import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     InlineQuery,
+    InlineQueryResultCachedPhoto,
     InlineQueryResultPhoto,
     InlineQueryResultsButton,
     InlineQueryResultUnion,
@@ -74,74 +75,6 @@ class Settings(BaseSettings):
     storage_chat_id: int | str
     webapp_auth_max_age: int = 86_400
     proxy_url: str | None = None
-    renderer_url: str = "http://renderer:3000"
-    renderer_token: str = ""
-    card_cache_dir: Path = Path(".cache/cards")
-    card_cache_ttl: int = 604_800
-    card_cache_max_mb: int = 256
-
-
-CARD_STYLES = {"classic", "aurora", "glass", "neon", "vhs", "manga", "mag", "polaroid", "print"}
-
-
-@dataclass(frozen=True, slots=True)
-class CardState:
-    anime_id: int
-    style: str
-    options: int
-    language: str
-    poster_index: int
-
-    @property
-    def option_values(self) -> dict[str, bool]:
-        return {
-            "score": bool(self.options & 1),
-            "genres": bool(self.options & 2),
-            "mark": bool(self.options & 4),
-        }
-
-
-def encode_card_token(state: CardState) -> str:
-    payload = json.dumps(
-        {
-            "a": state.anime_id,
-            "s": state.style,
-            "o": state.options,
-            "l": state.language,
-            "p": state.poster_index,
-        },
-        separators=(",", ":"),
-    ).encode()
-    return base64.urlsafe_b64encode(payload).rstrip(b"=").decode()
-
-
-def decode_card_token(token: str) -> CardState | None:
-    if (
-        not token
-        or len(token) > 256
-        or any(
-            char not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
-            for char in token
-        )
-    ):
-        return None
-    try:
-        raw = base64.urlsafe_b64decode(token + "=" * (-len(token) % 4))
-        value = json.loads(raw)
-        state = CardState(
-            int(value["a"]), str(value["s"]), int(value["o"]), str(value["l"]), int(value["p"])
-        )
-    except ValueError, TypeError, KeyError, json.JSONDecodeError:
-        return None
-    if (
-        state.anime_id <= 0
-        or state.style not in CARD_STYLES
-        or not 0 <= state.options <= 7
-        or state.language not in {"ru", "orig"}
-        or not 0 <= state.poster_index <= 12
-    ):
-        return None
-    return state
 
 
 def as_mapping(value: Any) -> dict[str, Any]:
@@ -281,7 +214,6 @@ class UpstreamSessions:
     """Send all public upstream traffic through one explicit Clash proxy."""
 
     external: ClientSession
-    internal: ClientSession
     proxy_url: str | None = None
 
     def request(self, method: str, url: str, **kwargs: Any) -> Any:
@@ -803,32 +735,25 @@ def build_router(
                 logging.info("Inline query %s expired before it could be answered", query.id)
 
         if card_id:
-            state = decode_card_token(card_id)
-            if not state:
+            meta = load_card_meta(settings, card_id)
+            file_id = as_text(meta.get("file_id"))
+            if not file_id:
+                logging.warning("Inline card %s has no Telegram file_id", card_id)
                 await answer([], cache_time=1)
                 return
-            try:
-                raw = await fetch_json(session, f"{SHIKIMORI_ORIGIN}/api/animes/{state.anime_id}")
-                anime = Anime.from_shikimori(as_mapping(raw))
-            except Exception:
-                logging.warning("Inline card %s could not resolve anime", card_id, exc_info=True)
-                await answer([], cache_time=1)
-                return
-            image_url = f"{settings.public_base_url.rstrip('/')}/card/{card_id}.jpg"
             await answer(
                 [
-                    InlineQueryResultPhoto(
+                    InlineQueryResultCachedPhoto(
                         id=f"card-{card_id}",
-                        photo_url=image_url,
-                        thumbnail_url=image_url,
-                        title=anime.title,
+                        photo_file_id=file_id,
+                        title=str(meta.get("title") or "Shiki Card"),
                         description="Готовая карточка из WebApp" if ru else "Card from the WebApp",
-                        caption=caption(anime),
+                        caption=card_caption(meta),
                         parse_mode="HTML",
-                        reply_markup=anime_markup(anime),
+                        reply_markup=card_markup(meta),
                     )
                 ],
-                cache_time=300,
+                cache_time=86_400,
             )
             return
 
@@ -877,144 +802,9 @@ async def create_web_app(
     trending_cache: TTLCache[list[Anime]] = TTLCache(ttl=1800)
     upload_limiter = SlidingWindowRateLimiter(settings.rendered_uploads_per_hour, 3600)
     rendered_lock = asyncio.Lock()
-    card_locks: dict[str, asyncio.Lock] = {}
-    settings.card_cache_dir.mkdir(parents=True, exist_ok=True)
-
-    async def resolve_card(state: CardState) -> Anime:
-        raw = await fetch_json(session, f"{SHIKIMORI_ORIGIN}/api/animes/{state.anime_id}")
-        anime = (await prefer_anilist_covers(session, [Anime.from_shikimori(as_mapping(raw))]))[0]
-        if not anime.image_url:
-            raise web.HTTPNotFound(text="poster unavailable")
-        if state.poster_index:
-            candidates = [
-                {
-                    "url": anime.image_url,
-                    "thumb": anime.image_preview or anime.image_url,
-                    "source": anime.image_source,
-                }
-            ]
-            seen = {anime.image_url}
-            for poster in await collect_posters(session, state.anime_id):
-                if poster["url"] not in seen:
-                    candidates.append(poster)
-                    seen.add(poster["url"])
-            try:
-                selected = candidates[state.poster_index]
-                anime = replace(
-                    anime,
-                    image_url=selected["url"],
-                    image_preview=selected["thumb"],
-                    image_source=selected["source"],
-                )
-            except (IndexError, KeyError):
-                raise web.HTTPNotFound(text="poster unavailable") from None
-        return anime
-
-    async def fetch_poster(url: str) -> bytes:
-        if not allowed_image(url):
-            raise web.HTTPBadRequest(text="poster host not allowed")
-        async with session.get(
-            url, headers={"User-Agent": USER_AGENT}, allow_redirects=False
-        ) as response:
-            response.raise_for_status()
-            body = bytes(await response.content.read(MAX_PROXY_IMAGE_BYTES + 1))
-        if len(body) > MAX_PROXY_IMAGE_BYTES:
-            raise web.HTTPRequestEntityTooLarge(
-                max_size=MAX_PROXY_IMAGE_BYTES, actual_size=len(body)
-            )
-        return body
-
-    async def ensure_card_jpeg(token: str, state: CardState) -> Path:
-        cache_path = settings.card_cache_dir / f"{hashlib.sha256(token.encode()).hexdigest()}.jpg"
-        if (
-            cache_path.is_file()
-            and time.time() - cache_path.stat().st_mtime <= settings.card_cache_ttl
-        ):
-            return cache_path
-        lock = card_locks.setdefault(token, asyncio.Lock())
-        async with lock:
-            if (
-                cache_path.is_file()
-                and time.time() - cache_path.stat().st_mtime <= settings.card_cache_ttl
-            ):
-                return cache_path
-            anime = await resolve_card(state)
-            poster = await fetch_poster(anime.image_url or "")
-            payload = {
-                "anime": {**anime_payload(anime), "episodes_label": "эп."},
-                "poster": base64.b64encode(poster).decode(),
-                "style": state.style,
-                "titleLanguage": state.language,
-                "options": state.option_values,
-            }
-            try:
-                async with session.internal.post(
-                    settings.renderer_url.rstrip("/") + "/render",
-                    json=payload,
-                    headers={"Authorization": f"Bearer {settings.renderer_token}"},
-                    timeout=ClientTimeout(total=30),
-                ) as response:
-                    if response.status != 200:
-                        raise web.HTTPBadGateway(text="renderer failed")
-                    jpeg = await response.read()
-            except ClientError as exc:
-                raise web.HTTPBadGateway(text="renderer unavailable") from exc
-            if not jpeg.startswith(b"\xff\xd8\xff") or len(jpeg) > MAX_RENDERED_IMAGE_BYTES:
-                raise web.HTTPBadGateway(text="invalid renderer response")
-            temp_path = cache_path.with_suffix(".tmp")
-            temp_path.write_bytes(jpeg)
-            temp_path.replace(cache_path)
-            return cache_path
 
     async def webapp_page(_: web.Request) -> web.FileResponse:
         return web.FileResponse(html_path)
-
-    async def card_page(request: web.Request) -> web.Response:
-        token = request.match_info["token"]
-        state = decode_card_token(token)
-        if not state:
-            raise web.HTTPNotFound()
-        anime = await resolve_card(state)
-        title = html.escape(anime.title)
-        image_url = f"{settings.public_base_url.rstrip('/')}/card/{token}.jpg"
-        webapp_link = f"{settings.public_base_url.rstrip('/')}/webapp?card={token}"
-        page = (
-            '<!doctype html><html><head><meta charset="utf-8">'
-            f'<title>{title}</title><meta property="og:title" content="{title}">'
-            '<meta property="og:description" content="Shiki Cards">'
-            f'<meta property="og:image" content="{image_url}">'
-            '<meta property="og:type" content="website"></head><body>'
-            f'<a href="{webapp_link}">Open Shiki Cards</a>'
-            f'<script>location.replace({json.dumps(webapp_link)})</script></body></html>'
-        )
-        return web.Response(text=page, content_type="text/html")
-
-    async def card_jpeg(request: web.Request) -> web.FileResponse:
-        token = request.match_info["token"]
-        state = decode_card_token(token)
-        if not state:
-            raise web.HTTPNotFound()
-        return web.FileResponse(
-            await ensure_card_jpeg(token, state), headers={"Cache-Control": "public, max-age=86400"}
-        )
-
-    async def card_data(request: web.Request) -> web.Response:
-        token = request.match_info["token"]
-        state = decode_card_token(token)
-        if not state:
-            raise web.HTTPNotFound()
-        anime = await resolve_card(state)
-        return web.json_response(
-            {
-                "anime": anime_payload(anime),
-                "state": {
-                    "style": state.style,
-                    "options": state.option_values,
-                    "language": state.language,
-                    "poster_index": state.poster_index,
-                },
-            }
-        )
 
     def require_webapp(request: web.Request) -> str:
         init_data = request.headers.get("X-Telegram-Init-Data", "")
@@ -1185,15 +975,14 @@ async def create_web_app(
 
     app.router.add_get("/healthz", healthz)
     app.router.add_get("/webapp", webapp_page)
-    app.router.add_get("/card/{token:[A-Za-z0-9_-]+}", card_page)
-    app.router.add_get("/card/{token:[A-Za-z0-9_-]+}.jpg", card_jpeg)
-    app.router.add_get("/api/card/{token:[A-Za-z0-9_-]+}", card_data)
     app.router.add_static("/static/", static_dir, name="static")
     app.router.add_get("/api/search", search_api)
     app.router.add_get("/api/trending", trending_api)
     app.router.add_get("/api/anime/{anime_id}/genres", genres_api)
     app.router.add_get("/api/anime/{anime_id}/posters", posters_api)
     app.router.add_get("/api/image", image_proxy)
+    app.router.add_post("/api/rendered", save_rendered)
+    app.router.add_get("/rendered/{card_id:[A-Za-z0-9-]+}.jpg", rendered_jpeg)
     return app
 
 
@@ -1203,11 +992,8 @@ async def main() -> None:
     cleanup_rendered_dir(settings)
     cache: TTLCache[list[Anime]] = TTLCache(ttl=settings.search_cache_ttl)
 
-    async with (
-        ClientSession(timeout=ClientTimeout(total=15)) as external_session,
-        ClientSession(timeout=ClientTimeout(total=15)) as internal_session,
-    ):
-        upstream = UpstreamSessions(external_session, internal_session, settings.proxy_url)
+    async with ClientSession(timeout=ClientTimeout(total=15)) as external_session:
+        upstream = UpstreamSessions(external_session, settings.proxy_url)
         bot_session = AiohttpSession(proxy=settings.proxy_url) if settings.proxy_url else None
         bot = Bot(settings.bot_token, session=bot_session)
         dp = Dispatcher()

@@ -1,7 +1,0 @@
-{
-  "name": "shiki-cards-renderer",
-  "private": true,
-  "version": "1.0.0",
-  "main": "server.js",
-  "dependencies": { "skia-canvas": "^3.0.0" }
-}

@@ -10,6 +10,8 @@ button, input { font: inherit; }
 .search-panel { margin-bottom: 20px; }
 .search-field { position: relative; }
 .search-field .ds-input, .search-field input { width: 100%; }
+/* The DS size utility can override its own leftIcon padding. */
+.search-field input { box-sizing: border-box; padding-left: 2.5rem !important; }
 .clear-search { position: absolute; z-index: 1; right: 8px; top: 50%; transform: translateY(-50%); min-width: 36px; padding: 6px; }
 .section-title { margin: 24px 0 10px; color: #65705f; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .result-list { display: grid; gap: 10px; }
