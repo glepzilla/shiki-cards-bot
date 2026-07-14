@@ -186,6 +186,25 @@ def test_jikan_pictures_falls_back_to_primary_artwork() -> None:
     asyncio.run(check())
 
 
+def test_jikan_primary_artwork_falls_back_from_proxy_to_direct() -> None:
+    async def check() -> None:
+        url = "https://cdn.myanimelist.net/images/anime/1/2l.jpg"
+        fetch = AsyncMock(
+            side_effect=[
+                TimeoutError,
+                {"data": {"images": {"jpg": {"large_image_url": url}}}},
+                TimeoutError,
+            ]
+        )
+        with patch("app.main.fetch_json", fetch):
+            pictures = await fetch_jikan_pictures(object(), 17)  # type: ignore[arg-type]
+
+        assert pictures == [(url, url)]
+        assert fetch.await_args_list[1].kwargs == {"force_direct": True}
+
+    asyncio.run(check())
+
+
 def test_upstream_sessions_proxy_only_jikan_api_requests() -> None:
     class CapturingSession:
         def __init__(self) -> None:

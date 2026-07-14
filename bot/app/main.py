@@ -262,11 +262,13 @@ async def fetch_json(
     *,
     params: dict[str, str] | None = None,
     json_payload: dict[str, Any] | None = None,
+    force_direct: bool = False,
 ) -> Any:
     """GET/POST JSON with per-host throttling and one short retry for transient failures."""
     throttle = THROTTLES.get(urlparse(url).netloc)
     headers = {"User-Agent": USER_AGENT}
     method = "POST" if json_payload is not None else "GET"
+    request_options: dict[str, Any] = {"proxy": None} if force_direct else {}
     for attempt in (0, 1):
         if throttle:
             await throttle.wait()
@@ -278,6 +280,7 @@ async def fetch_json(
                 json=json_payload,
                 headers=headers,
                 timeout=ClientTimeout(total=UPSTREAM_REQUEST_TIMEOUT),
+                **request_options,
             ) as resp:
                 if attempt == 0 and (resp.status == 429 or 500 <= resp.status < 600):
                     if resp.status == 429:
@@ -403,7 +406,14 @@ async def trending_anime(session: UpstreamSessions, cache: TTLCache[list[Anime]]
 
 
 async def fetch_jikan_pictures(session: UpstreamSessions, mal_id: int) -> list[tuple[str, str]]:
-    details = await fetch_json(session, f"{JIKAN_API}/anime/{mal_id}")
+    details_url = f"{JIKAN_API}/anime/{mal_id}"
+    try:
+        details = await fetch_json(session, details_url)
+    except Exception:
+        # Prefer the configured proxy, but do not hide Jikan completely when
+        # that particular exit is rejected by its gateway.
+        logging.warning("Jikan proxy request failed for %s; trying direct route", mal_id)
+        details = await fetch_json(session, details_url, force_direct=True)
     images = as_mapping(as_mapping(details).get("data")).get("images")
     jpg = as_mapping(as_mapping(images).get("jpg"))
     primary_url = as_text(jpg.get("large_image_url") or jpg.get("image_url"))
