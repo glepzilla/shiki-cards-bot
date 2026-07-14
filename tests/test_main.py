@@ -23,7 +23,6 @@ from app.main import (
     collect_posters,
     create_inline_session,
     create_web_app,
-    fetch_jikan_pictures,
     parse_card_query,
     validate_inline_session,
     validate_webapp_init_data,
@@ -99,27 +98,6 @@ def test_anime_from_shikimori_handles_dirty_optional_fields() -> None:
     assert anime.image_url is None
 
 
-def test_anime_from_jikan_handles_dirty_nested_data() -> None:
-    anime = Anime.from_jikan(
-        {
-            "mal_id": "42",
-            "title": None,
-            "type": "TV",
-            "images": {"jpg": "invalid"},
-            "genres": [{"name": "Action"}, "invalid", {"name": ""}],
-            "episodes": "24",
-            "year": "2020",
-        }
-    )
-    assert anime.id == 42
-    assert anime.name == "Untitled"
-    assert anime.kind == "tv"
-    assert anime.genres == ("Action",)
-    assert anime.episodes == 24
-    assert anime.year == 2020
-    assert anime.image_url is None
-
-
 def test_anilist_cover_replaces_the_default_poster() -> None:
     anime = Anime.from_shikimori(
         {
@@ -138,7 +116,7 @@ def test_anilist_cover_replaces_the_default_poster() -> None:
     assert apply_anilist_covers([anime], {}) == [anime]
 
 
-def test_collect_posters_keeps_source_artwork_when_jikan_is_unavailable() -> None:
+def test_collect_posters_uses_only_anilist_and_shikimori() -> None:
     anilist = "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/17.jpg"
     shikimori = "https://shikimori.io/system/animes/original/17.jpg"
 
@@ -149,8 +127,6 @@ def test_collect_posters_keeps_source_artwork_when_jikan_is_unavailable() -> Non
                 "app.main.fetch_shikimori_poster",
                 AsyncMock(return_value=[(shikimori, shikimori)]),
             ),
-            patch("app.main.fetch_jikan_pictures", AsyncMock(side_effect=TimeoutError)),
-            patch("app.main.fetch_mal_poster", AsyncMock(return_value=[])),
         ):
             posters = await collect_posters(object(), 17)  # type: ignore[arg-type]
 
@@ -160,109 +136,24 @@ def test_collect_posters_keeps_source_artwork_when_jikan_is_unavailable() -> Non
     asyncio.run(check())
 
 
-def test_collect_posters_uses_mal_when_jikan_is_unavailable() -> None:
+def test_collect_posters_keeps_available_provider_when_the_other_fails() -> None:
+    shikimori = "https://shikimori.io/system/animes/original/17.jpg"
+
     async def check() -> None:
-        mal = "https://cdn.myanimelist.net/images/anime/1/2.jpg"
         with (
-            patch("app.main.fetch_anilist_cover", AsyncMock(return_value=[])),
-            patch("app.main.fetch_shikimori_poster", AsyncMock(return_value=[])),
-            patch("app.main.fetch_jikan_pictures", AsyncMock(side_effect=TimeoutError)),
-            patch("app.main.fetch_mal_poster", AsyncMock(return_value=[(mal, mal)])),
-        ):
-            posters = await collect_posters(object(), 17)  # type: ignore[arg-type]
-
-        assert posters == [{"url": mal, "thumb": mal, "source": "mal"}]
-
-    asyncio.run(check())
-
-
-def test_collect_posters_exposes_jikan_as_its_own_source() -> None:
-    async def check() -> None:
-        anilist = "https://s4.anilist.co/file/cover.jpg"
-        shikimori = "https://shikimori.io/uploads/poster.jpg"
-        jikan = "https://cdn.myanimelist.net/images/anime/1/2l.jpg"
-        with (
-            patch("app.main.fetch_anilist_cover", AsyncMock(return_value=[(anilist, anilist)])),
+            patch("app.main.fetch_anilist_cover", AsyncMock(side_effect=TimeoutError)),
             patch(
                 "app.main.fetch_shikimori_poster",
                 AsyncMock(return_value=[(shikimori, shikimori)]),
             ),
-            patch("app.main.fetch_jikan_pictures", AsyncMock(return_value=[(jikan, jikan)])),
         ):
             posters = await collect_posters(object(), 17)  # type: ignore[arg-type]
 
-        assert [poster["source"] for poster in posters] == [
-            "anilist",
-            "shikimori",
-            "jikan",
+        assert posters == [
+            {"url": shikimori, "thumb": shikimori, "source": "shikimori"}
         ]
 
     asyncio.run(check())
-
-
-def test_jikan_pictures_falls_back_to_primary_artwork() -> None:
-    async def check() -> None:
-        url = "https://cdn.myanimelist.net/images/anime/1/2l.jpg"
-        thumb = "https://cdn.myanimelist.net/images/anime/1/2.jpg"
-        fetch = AsyncMock(
-            side_effect=[
-                {"data": {"images": {"jpg": {"large_image_url": url, "image_url": thumb}}}},
-                TimeoutError,
-            ]
-        )
-        with patch("app.main.fetch_json", fetch):
-            pictures = await fetch_jikan_pictures(object(), 17)  # type: ignore[arg-type]
-
-        assert pictures == [(url, thumb)]
-        assert fetch.await_count == 2
-
-    asyncio.run(check())
-
-
-def test_jikan_primary_artwork_falls_back_from_proxy_to_direct() -> None:
-    async def check() -> None:
-        url = "https://cdn.myanimelist.net/images/anime/1/2l.jpg"
-        fetch = AsyncMock(
-            side_effect=[
-                TimeoutError,
-                {"data": {"images": {"jpg": {"large_image_url": url}}}},
-                TimeoutError,
-            ]
-        )
-        with patch("app.main.fetch_json", fetch):
-            pictures = await fetch_jikan_pictures(object(), 17)  # type: ignore[arg-type]
-
-        assert pictures == [(url, url)]
-        assert fetch.await_args_list[1].kwargs == {"force_direct": True}
-
-    asyncio.run(check())
-
-
-def test_upstream_sessions_proxy_only_jikan_api_requests() -> None:
-    class CapturingSession:
-        def __init__(self) -> None:
-            self.calls: list[tuple[str, str, dict[str, object]]] = []
-
-        def request(self, method: str, url: str, **kwargs: object) -> object:
-            self.calls.append((method, url, kwargs))
-            return object()
-
-    direct = CapturingSession()
-    proxy_url = "http://proxy.test:7890"
-    sessions = UpstreamSessions(direct, proxy_url)  # type: ignore[arg-type]
-
-    for url in (
-        "https://shikimori.io/api/animes",
-        "https://api.jikan.moe/v4/anime",
-        "https://graphql.anilist.co",
-        "https://s4.anilist.co/file/cover.jpg",
-        "https://cdn.myanimelist.net/images/cover.jpg",
-    ):
-        sessions.request("GET", url)
-    assert len(direct.calls) == 5
-    assert direct.calls[0][2].get("proxy") is None
-    assert direct.calls[1][2].get("proxy") == proxy_url
-    assert all(call[2].get("proxy") is None for call in direct.calls[2:])
 
 
 def test_ttl_cache_expires_and_evicts_oldest() -> None:

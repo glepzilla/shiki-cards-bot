@@ -67,7 +67,7 @@
     print: { score: [668, 752], genres: { minY: 790, maxY: 990, alternateY: 960 } },
   };
   const HISTORY_KEY = 'shiki:recent';
-  const SRC_BADGE = { shikimori: 'SHIKI', jikan: 'JIKAN', mal: 'MAL', anilist: 'AL' };
+  const SRC_BADGE = { shikimori: 'SHIKI', anilist: 'AL' };
   const STATUS = { ongoing: T.ongoing, anons: T.anons };
   const { createElement: h, useCallback, useEffect, useMemo, useRef, useState } = window.React;
   const { Alert, Button, Card, Heading, Input, Spinner, Switch, Tag, Text } = window.GlEpkaDS;

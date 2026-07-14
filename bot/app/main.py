@@ -11,7 +11,6 @@ import os
 import socket
 import time
 from dataclasses import dataclass, replace
-from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlparse
@@ -47,28 +46,20 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from app.cache import SlidingWindowRateLimiter, Throttle, TTLCache
 
 SHIKIMORI_ORIGIN = "https://shikimori.io"
-MAL_ORIGIN = "https://myanimelist.net"
-JIKAN_API = "https://api.jikan.moe/v4"
 ANILIST_API = "https://graphql.anilist.co"
 USER_AGENT = "shikizilla/0.2"
 UPSTREAM_REQUEST_TIMEOUT = 4.0
 INLINE_SEARCH_TIMEOUT = 8.0
-# Jikan is reached through the explicit proxy. Fetch its stable primary image
-# first, then allow a bounded best-effort request for the optional gallery.
-POSTER_FETCH_TIMEOUT = 14.0
-JIKAN_GALLERY_TIMEOUT = 5.0
 MAX_RENDERED_IMAGE_BYTES = 5 * 1024 * 1024
 MAX_PROXY_IMAGE_BYTES = 5 * 1024 * 1024
 ALLOWED_IMAGE_HOSTS = {
     "shikimori.one",
     "shikimori.io",  # Older API payloads may still contain this host.
-    "cdn.myanimelist.net",
     "s4.anilist.co",
 }
-ALLOWED_LINK_HOSTS = {"shikimori.one", "shikimori.io", "myanimelist.net"}
+ALLOWED_LINK_HOSTS = {"shikimori.one", "shikimori.io"}
 # Direct access from the VPS to AniList's Cloudflare image edge is unreliable.
 PROXIED_IMAGE_HOSTS = {"s4.anilist.co"}
-PROXIED_API_HOSTS = {"api.jikan.moe"}
 WEBAPP_DIR = Path(__file__).parent
 WEBAPP_HTML_PATH = WEBAPP_DIR / "webapp.html"
 WEBAPP_STATIC_DIR = WEBAPP_DIR / "static"
@@ -85,13 +76,6 @@ _webapp_asset_digest = hashlib.sha256()
 for _webapp_asset_path in WEBAPP_VERSIONED_ASSETS:
     _webapp_asset_digest.update(_webapp_asset_path.read_bytes())
 WEBAPP_ASSET_VERSION = _webapp_asset_digest.hexdigest()[:12]
-
-JIKAN_STATUS = {
-    "Currently Airing": "ongoing",
-    "Finished Airing": "released",
-    "Not yet aired": "anons",
-}
-
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -210,7 +194,7 @@ class Anime:
     episodes: int | None
     year: int | None
     genres: tuple[str, ...]
-    source: str  # "shikimori" | "mal"
+    source: str  # "shikimori"
 
     @property
     def title(self) -> str:
@@ -218,8 +202,6 @@ class Anime:
 
     @property
     def page_url(self) -> str:
-        if self.source == "mal":
-            return f"{MAL_ORIGIN}/anime/{self.id}"
         return f"{SHIKIMORI_ORIGIN}/animes/{self.id}"
 
     @classmethod
@@ -244,52 +226,20 @@ class Anime:
             source="shikimori",
         )
 
-    @classmethod
-    def from_jikan(cls, raw: dict[str, Any]) -> Anime:
-        images = as_mapping(as_mapping(raw.get("images")).get("jpg"))
-        kind = as_text(raw.get("type"))
-        score = raw.get("score")
-        raw_genres = raw.get("genres")
-        genres = tuple(
-            name
-            for genre in (raw_genres if isinstance(raw_genres, list) else [])
-            if (name := as_text(as_mapping(genre).get("name")))
-        )
-        return cls(
-            id=int(raw["mal_id"]),
-            name=as_text(raw.get("title")) or "Untitled",
-            russian=None,
-            kind=kind.lower() if kind else None,
-            score=str(score) if score else None,
-            status=JIKAN_STATUS.get(str(raw.get("status") or "")),
-            image_url=as_text(images.get("large_image_url") or images.get("image_url")),
-            image_preview=as_text(images.get("image_url") or images.get("large_image_url")),
-            image_source="mal",
-            episodes=as_int(raw.get("episodes")),
-            year=as_int(raw.get("year")),
-            genres=genres,
-            source="mal",
-        )
-
-
 THROTTLES = {
     "shikimori.one": Throttle(0.35),
     "shikimori.io": Throttle(0.35),
-    "api.jikan.moe": Throttle(0.5),
     "graphql.anilist.co": Throttle(0.35),
 }
 
 
 @dataclass(frozen=True, slots=True)
 class UpstreamSessions:
-    """Provider session with an explicit proxy only for hosts that need it."""
+    """Shared provider session."""
 
     direct: ClientSession
-    proxy_url: str | None = None
 
     def request(self, method: str, url: str, **kwargs: Any) -> Any:
-        if self.proxy_url and urlparse(url).netloc in PROXIED_API_HOSTS:
-            kwargs.setdefault("proxy", self.proxy_url)
         return self.direct.request(method, url, **kwargs)
 
     def get(self, url: str, **kwargs: Any) -> Any:
@@ -302,13 +252,11 @@ async def fetch_json(
     *,
     params: dict[str, str] | None = None,
     json_payload: dict[str, Any] | None = None,
-    force_direct: bool = False,
 ) -> Any:
     """GET/POST JSON with per-host throttling and one short retry for transient failures."""
     throttle = THROTTLES.get(urlparse(url).netloc)
     headers = {"User-Agent": USER_AGENT}
     method = "POST" if json_payload is not None else "GET"
-    request_options: dict[str, Any] = {"proxy": None} if force_direct else {}
     for attempt in (0, 1):
         if throttle:
             await throttle.wait()
@@ -320,7 +268,6 @@ async def fetch_json(
                 json=json_payload,
                 headers=headers,
                 timeout=ClientTimeout(total=UPSTREAM_REQUEST_TIMEOUT),
-                **request_options,
             ) as resp:
                 if attempt == 0 and (resp.status == 429 or 500 <= resp.status < 600):
                     if resp.status == 429:
@@ -368,44 +315,19 @@ async def search_shikimori(session: UpstreamSessions, query: str) -> list[Anime]
     return [Anime.from_shikimori(item) for item in data]
 
 
-async def search_jikan(session: UpstreamSessions, query: str) -> list[Anime]:
-    params = {"q": query, "limit": "10", "order_by": "members", "sort": "desc", "sfw": "true"}
-    data = await fetch_json(session, f"{JIKAN_API}/anime", params=params)
-    return [Anime.from_jikan(item) for item in data.get("data") or []]
-
-
 async def search_anime(
     session: UpstreamSessions, cache: TTLCache[list[Anime]], query: str
 ) -> list[Anime]:
-    """Shikimori first (Russian titles), Jikan as fallback when it fails or finds nothing."""
+    """Search Shikimori and prefer AniList artwork when available."""
     key = query.casefold()
     cached = cache.get(key)
     if cached is not None:
         return cached
 
-    animes: list[Anime] = []
-    shikimori_failed = False
-    jikan_succeeded = False
-    try:
-        animes = await search_shikimori(session, query)
-    except Exception as exc:
-        shikimori_failed = True
-        logging.warning("Shikimori search failed, trying Jikan: %s", exc)
-
-    if not animes:
-        try:
-            animes = await search_jikan(session, query)
-            jikan_succeeded = True
-        except Exception as exc:
-            if shikimori_failed:
-                raise
-            logging.warning("Jikan fallback failed: %s", exc)
-
-    # An empty Shikimori response is only trustworthy after the fallback answered too.
+    animes = await search_shikimori(session, query)
     if animes:
         animes = await prefer_anilist_covers(session, animes)
-    if animes or jikan_succeeded:
-        cache.put(key, animes)
+    cache.put(key, animes)
     return animes
 
 
@@ -429,15 +351,7 @@ async def trending_anime(session: UpstreamSessions, cache: TTLCache[list[Anime]]
         data = await fetch_json(session, f"{SHIKIMORI_ORIGIN}/api/animes", params=params)
         animes = [Anime.from_shikimori(item) for item in data]
     except Exception:
-        logging.warning("Shikimori trending failed, trying Jikan", exc_info=True)
-
-    if not animes:
-        try:
-            params = {"filter": "airing", "limit": "10"}
-            data = await fetch_json(session, f"{JIKAN_API}/top/anime", params=params)
-            animes = [Anime.from_jikan(item) for item in data.get("data") or []]
-        except Exception:
-            logging.warning("Jikan trending fallback failed", exc_info=True)
+        logging.warning("Shikimori trending failed", exc_info=True)
 
     if animes:
         animes = await prefer_anilist_covers(session, animes)
@@ -445,89 +359,8 @@ async def trending_anime(session: UpstreamSessions, cache: TTLCache[list[Anime]]
     return animes
 
 
-async def fetch_jikan_pictures(session: UpstreamSessions, mal_id: int) -> list[tuple[str, str]]:
-    details_url = f"{JIKAN_API}/anime/{mal_id}"
-    try:
-        details = await fetch_json(session, details_url)
-    except Exception:
-        # Prefer the configured proxy, but do not hide Jikan completely when
-        # that particular exit is rejected by its gateway.
-        logging.warning("Jikan proxy request failed for %s; trying direct route", mal_id)
-        details = await fetch_json(session, details_url, force_direct=True)
-    images = as_mapping(as_mapping(details).get("data")).get("images")
-    jpg = as_mapping(as_mapping(images).get("jpg"))
-    primary_url = as_text(jpg.get("large_image_url") or jpg.get("image_url"))
-    primary_thumb = as_text(jpg.get("image_url") or jpg.get("large_image_url"))
-    pairs = [(primary_url, primary_thumb or primary_url)] if primary_url else []
-    seen = {primary_url} if primary_url else set()
-    try:
-        data = await asyncio.wait_for(
-            fetch_json(session, f"{JIKAN_API}/anime/{mal_id}/pictures"),
-            timeout=JIKAN_GALLERY_TIMEOUT,
-        )
-    except Exception:
-        # Jikan's pictures route occasionally returns a gateway timeout while
-        # the regular anime route stays healthy. Keep the provider available
-        # with its primary MAL artwork until the gallery recovers.
-        logging.warning("Jikan pictures failed for %s; using primary artwork", mal_id)
-        return pairs
-    for item in data.get("data") or []:
-        jpg = item.get("jpg") or {}
-        url = jpg.get("large_image_url") or jpg.get("image_url")
-        thumb = jpg.get("image_url") or jpg.get("large_image_url")
-        if url and url not in seen:
-            seen.add(url)
-            pairs.append((str(url), str(thumb or url)))
-    return pairs
-
-
-class OpenGraphImageParser(HTMLParser):
-    def __init__(self) -> None:
-        super().__init__()
-        self.image_url: str | None = None
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag != "meta" or self.image_url:
-            return
-        values = dict(attrs)
-        if values.get("property") == "og:image" or values.get("name") == "og:image":
-            self.image_url = as_text(values.get("content"))
-
-
-async def fetch_mal_poster(session: UpstreamSessions, mal_id: int) -> list[tuple[str, str]]:
-    """Read MAL's public OpenGraph image when Jikan is unreachable."""
-    url = f"{MAL_ORIGIN}/anime/{mal_id}"
-    proxies: list[str | None] = [None]
-    if session.proxy_url:
-        proxies.append(session.proxy_url)
-    last_error: Exception | None = None
-    for proxy in proxies:
-        try:
-            async with session.get(
-                url,
-                proxy=proxy,
-                headers={"User-Agent": USER_AGENT},
-                timeout=ClientTimeout(total=UPSTREAM_REQUEST_TIMEOUT),
-            ) as resp:
-                resp.raise_for_status()
-                raw = await resp.content.read(1_048_577)
-                if len(raw) > 1_048_576:
-                    raise ValueError("MAL page is too large")
-            parser = OpenGraphImageParser()
-            parser.feed(raw.decode("utf-8", errors="replace"))
-            image_url = parser.image_url
-            if image_url and allowed_image(image_url):
-                return [(image_url, image_url)]
-            raise ValueError("MAL page has no allowed OpenGraph image")
-        except Exception as exc:
-            last_error = exc
-    if last_error:
-        raise last_error
-    return []
-
-
 async def fetch_shikimori_poster(
-    session: UpstreamSessions, mal_id: int
+    session: UpstreamSessions, anime_id: int
 ) -> list[tuple[str, str]]:
     """Keep the source artwork available when AniList becomes the preferred cover."""
     query = (
@@ -538,7 +371,7 @@ async def fetch_shikimori_poster(
         data = await fetch_json(
             session,
             f"{SHIKIMORI_ORIGIN}/api/graphql",
-            json_payload={"query": query, "variables": {"ids": str(mal_id)}},
+            json_payload={"query": query, "variables": {"ids": str(anime_id)}},
         )
         animes = as_mapping(data).get("data")
         items = as_mapping(animes).get("animes")
@@ -547,8 +380,10 @@ async def fetch_shikimori_poster(
         url = as_text(poster.get("originalUrl") or poster.get("mainUrl"))
         thumb = as_text(poster.get("mainUrl") or poster.get("originalUrl"))
     except Exception:
-        logging.warning("Shikimori GraphQL poster fetch failed for %s", mal_id, exc_info=True)
-        data = await fetch_json(session, f"{SHIKIMORI_ORIGIN}/api/animes/{mal_id}")
+        logging.warning(
+            "Shikimori GraphQL poster fetch failed for %s", anime_id, exc_info=True
+        )
+        data = await fetch_json(session, f"{SHIKIMORI_ORIGIN}/api/animes/{anime_id}")
         image = as_mapping(as_mapping(data).get("image"))
         url = absolute_url(as_text(image.get("original") or image.get("preview")))
         thumb = absolute_url(as_text(image.get("preview") or image.get("original")))
@@ -556,29 +391,29 @@ async def fetch_shikimori_poster(
 
 
 async def fetch_anilist_covers(
-    session: UpstreamSessions, mal_ids: list[int]
+    session: UpstreamSessions, anime_ids: list[int]
 ) -> dict[int, tuple[str, str]]:
-    """Fetch AniList covers in one request, keyed by MyAnimeList id."""
-    if not mal_ids:
+    """Fetch AniList covers in one request, keyed by the source anime id."""
+    if not anime_ids:
         return {}
 
     query = (
         "query($ids:[Int]){Page(perPage:50){media(idMal_in:$ids,type:ANIME)"
         "{idMal coverImage{extraLarge large}}}}"
     )
-    payload = {"query": query, "variables": {"ids": mal_ids}}
+    payload = {"query": query, "variables": {"ids": anime_ids}}
     data = await fetch_json(session, ANILIST_API, json_payload=payload)
     page = as_mapping(as_mapping(data).get("data")).get("Page")
     media = as_mapping(page).get("media")
     covers: dict[int, tuple[str, str]] = {}
     for item in media if isinstance(media, list) else []:
         item_data = as_mapping(item)
-        mal_id = as_int(item_data.get("idMal"))
+        source_id = as_int(item_data.get("idMal"))
         cover = as_mapping(item_data.get("coverImage"))
         url = as_text(cover.get("extraLarge") or cover.get("large"))
         thumb = as_text(cover.get("large") or cover.get("extraLarge"))
-        if mal_id is not None and url and allowed_image(url):
-            covers[mal_id] = (url, thumb if thumb and allowed_image(thumb) else url)
+        if source_id is not None and url and allowed_image(url):
+            covers[source_id] = (url, thumb if thumb and allowed_image(thumb) else url)
     return covers
 
 
@@ -608,8 +443,10 @@ async def prefer_anilist_covers(session: UpstreamSessions, animes: list[Anime]) 
         return animes
 
 
-async def fetch_anilist_cover(session: UpstreamSessions, mal_id: int) -> list[tuple[str, str]]:
-    cover = (await fetch_anilist_covers(session, [mal_id])).get(mal_id)
+async def fetch_anilist_cover(
+    session: UpstreamSessions, anime_id: int
+) -> list[tuple[str, str]]:
+    cover = (await fetch_anilist_covers(session, [anime_id])).get(anime_id)
     return [cover] if cover else []
 
 
@@ -618,30 +455,19 @@ def allowed_image(url: str) -> bool:
     return parsed.scheme == "https" and parsed.netloc in ALLOWED_IMAGE_HOSTS
 
 
-async def collect_posters(session: UpstreamSessions, mal_id: int) -> list[dict[str, str]]:
-    """Alternative posters from AniList, Shikimori, Jikan and MAL."""
+async def collect_posters(session: UpstreamSessions, anime_id: int) -> list[dict[str, str]]:
+    """Alternative posters from AniList and Shikimori."""
     results = await asyncio.gather(
-        fetch_anilist_cover(session, mal_id),
-        fetch_shikimori_poster(session, mal_id),
-        asyncio.wait_for(fetch_jikan_pictures(session, mal_id), timeout=POSTER_FETCH_TIMEOUT),
+        fetch_anilist_cover(session, anime_id),
+        fetch_shikimori_poster(session, anime_id),
         return_exceptions=True,
     )
     posters: list[dict[str, str]] = []
     seen: set[str] = set()
-    for source, result in zip(("anilist", "shikimori", "jikan"), results, strict=True):
+    for source, result in zip(("anilist", "shikimori"), results, strict=True):
         if isinstance(result, BaseException):
-            logging.warning("poster fetch (%s) failed for %s: %s", source, mal_id, result)
-            if source == "jikan":
-                try:
-                    result = await asyncio.wait_for(
-                        fetch_mal_poster(session, mal_id), timeout=POSTER_FETCH_TIMEOUT
-                    )
-                    source = "mal"
-                except Exception as exc:
-                    logging.warning("poster fetch (mal) failed for %s: %s", mal_id, exc)
-                    continue
-            else:
-                continue
+            logging.warning("poster fetch (%s) failed for %s: %s", source, anime_id, result)
+            continue
         for url, thumb in result:
             if not allowed_image(url) or url in seen:
                 continue
@@ -728,8 +554,9 @@ def card_markup(meta: dict[str, Any]) -> InlineKeyboardMarkup | None:
     url = str(meta.get("url") or "")
     if not allowed_link(url):
         return None
-    label = "Открыть на MyAnimeList" if "myanimelist" in url else "Открыть на Shikimori"
-    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=label, url=url)]])
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="Открыть на Shikimori", url=url)]]
+    )
 
 
 def card_inline_result(
@@ -774,9 +601,10 @@ async def prepare_card_share(
 
 
 def anime_markup(anime: Anime) -> InlineKeyboardMarkup:
-    label = "Открыть на MyAnimeList" if anime.source == "mal" else "Открыть на Shikimori"
     return InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text=label, url=anime.page_url)]]
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Открыть на Shikimori", url=anime.page_url)]
+        ]
     )
 
 
@@ -1085,9 +913,7 @@ async def create_web_app(
         if cached is not None:
             return web.json_response({"posters": cached})
         posters = await collect_posters(session, int(raw_id))
-        # Do not keep a partial provider response for an hour. A later editor open
-        # should retry Jikan after a transient proxy or upstream failure.
-        if any(poster["source"] == "jikan" for poster in posters):
+        if posters:
             poster_cache.put(raw_id, posters)
         return web.json_response({"posters": posters})
 
@@ -1257,7 +1083,7 @@ async def main() -> None:
         timeout=ClientTimeout(total=15),
         connector=TCPConnector(family=socket.AF_INET, ttl_dns_cache=300),
     ) as direct_session:
-        upstream = UpstreamSessions(direct_session, settings.proxy_url)
+        upstream = UpstreamSessions(direct_session)
         bot_session = AiohttpSession(proxy=settings.proxy_url) if settings.proxy_url else None
         bot = Bot(settings.bot_token, session=bot_session)
         dp = Dispatcher()
