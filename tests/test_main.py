@@ -4,11 +4,13 @@ import hmac
 import os
 import time
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
 from urllib.parse import urlencode
 
 from aiohttp import ClientSession
 from aiohttp.test_utils import TestClient, TestServer
 from app.main import (
+    WEBAPP_ASSET_VERSION,
     Anime,
     Settings,
     SlidingWindowRateLimiter,
@@ -16,6 +18,7 @@ from app.main import (
     UpstreamSessions,
     apply_anilist_covers,
     cleanup_rendered_dir,
+    collect_posters,
     create_web_app,
     parse_card_query,
     validate_webapp_init_data,
@@ -50,9 +53,9 @@ def test_parse_card_query() -> None:
 
 def test_webapp_url_uses_the_site_root() -> None:
     settings = make_settings(Path(".cache/rendered"))
-    assert webapp_url(settings) == "https://example.test/"
+    assert webapp_url(settings) == f"https://example.test/?v={WEBAPP_ASSET_VERSION}"
     assert webapp_url(settings, "Fullmetal Alchemist") == (
-        "https://example.test/?q=Fullmetal+Alchemist"
+        f"https://example.test/?v={WEBAPP_ASSET_VERSION}&q=Fullmetal+Alchemist"
     )
 
 
@@ -118,7 +121,28 @@ def test_anilist_cover_replaces_the_default_poster() -> None:
     assert apply_anilist_covers([anime], {}) == [anime]
 
 
-def test_upstream_sessions_send_all_provider_requests_directly() -> None:
+def test_collect_posters_keeps_source_artwork_when_jikan_is_unavailable() -> None:
+    anilist = "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/17.jpg"
+    shikimori = "https://shikimori.io/system/animes/original/17.jpg"
+
+    async def check() -> None:
+        with (
+            patch("app.main.fetch_anilist_cover", AsyncMock(return_value=[(anilist, anilist)])),
+            patch(
+                "app.main.fetch_shikimori_poster",
+                AsyncMock(return_value=[(shikimori, shikimori)]),
+            ),
+            patch("app.main.fetch_jikan_pictures", AsyncMock(side_effect=TimeoutError)),
+        ):
+            posters = await collect_posters(object(), 17)  # type: ignore[arg-type]
+
+        assert [poster["source"] for poster in posters] == ["anilist", "shikimori"]
+        assert [poster["url"] for poster in posters] == [anilist, shikimori]
+
+    asyncio.run(check())
+
+
+def test_upstream_sessions_proxy_only_jikan_api_requests() -> None:
     class CapturingSession:
         def __init__(self) -> None:
             self.calls: list[tuple[str, str, dict[str, object]]] = []
@@ -128,7 +152,8 @@ def test_upstream_sessions_send_all_provider_requests_directly() -> None:
             return object()
 
     direct = CapturingSession()
-    sessions = UpstreamSessions(direct)  # type: ignore[arg-type]
+    proxy_url = "http://proxy.test:7890"
+    sessions = UpstreamSessions(direct, proxy_url)  # type: ignore[arg-type]
 
     for url in (
         "https://shikimori.io/api/animes",
@@ -139,7 +164,9 @@ def test_upstream_sessions_send_all_provider_requests_directly() -> None:
     ):
         sessions.request("GET", url)
     assert len(direct.calls) == 5
-    assert all("proxy" not in call[2] for call in direct.calls)
+    assert direct.calls[0][2].get("proxy") is None
+    assert direct.calls[1][2].get("proxy") == proxy_url
+    assert all(call[2].get("proxy") is None for call in direct.calls[2:])
 
 
 def test_ttl_cache_expires_and_evicts_oldest() -> None:
@@ -200,7 +227,12 @@ def test_webapp_rejects_unauthenticated_requests_and_upload_failures(tmp_path: P
                 assert (await client.get("/static/webapp.js")).status == 200
                 webapp = await client.get("/")
                 assert webapp.status == 200
-                assert "/static/ds/_ds_bundle.js" in await webapp.text()
+                html = await webapp.text()
+                assert webapp.headers["Cache-Control"] == "no-store"
+                assert "/static/ds/_ds_bundle.js?v=" in html
+                assert "/static/webapp.css?v=" in html
+                assert "/static/webapp.js?v=" in html
+                assert "{{ASSET_VERSION}}" not in html
                 assert (await client.get("/webapp")).status == 404
                 assert (await client.get("/rendered/card.json")).status == 404
 

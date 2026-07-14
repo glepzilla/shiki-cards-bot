@@ -52,6 +52,7 @@ ANILIST_API = "https://graphql.anilist.co"
 USER_AGENT = "shiki-cards-bot/0.2"
 UPSTREAM_REQUEST_TIMEOUT = 4.0
 INLINE_SEARCH_TIMEOUT = 8.0
+POSTER_FETCH_TIMEOUT = 3.0
 MAX_RENDERED_IMAGE_BYTES = 5 * 1024 * 1024
 MAX_PROXY_IMAGE_BYTES = 5 * 1024 * 1024
 ALLOWED_IMAGE_HOSTS = {
@@ -63,6 +64,22 @@ ALLOWED_IMAGE_HOSTS = {
 ALLOWED_LINK_HOSTS = {"shikimori.one", "shikimori.io", "myanimelist.net"}
 # Direct access from the VPS to AniList's Cloudflare image edge is unreliable.
 PROXIED_IMAGE_HOSTS = {"s4.anilist.co"}
+PROXIED_API_HOSTS = {"api.jikan.moe"}
+WEBAPP_DIR = Path(__file__).parent
+WEBAPP_HTML_PATH = WEBAPP_DIR / "webapp.html"
+WEBAPP_STATIC_DIR = WEBAPP_DIR / "static"
+WEBAPP_VERSIONED_ASSETS = (
+    WEBAPP_HTML_PATH,
+    WEBAPP_STATIC_DIR / "webapp.css",
+    WEBAPP_STATIC_DIR / "webapp.js",
+    WEBAPP_STATIC_DIR / "ds" / "_ds_bundle.css",
+    WEBAPP_STATIC_DIR / "ds" / "_ds_bundle.js",
+    WEBAPP_STATIC_DIR / "ds" / "_vendor" / "react.js",
+)
+_webapp_asset_digest = hashlib.sha256()
+for _webapp_asset_path in WEBAPP_VERSIONED_ASSETS:
+    _webapp_asset_digest.update(_webapp_asset_path.read_bytes())
+WEBAPP_ASSET_VERSION = _webapp_asset_digest.hexdigest()[:12]
 
 JIKAN_STATUS = {
     "Currently Airing": "ongoing",
@@ -221,11 +238,14 @@ THROTTLES = {
 
 @dataclass(frozen=True, slots=True)
 class UpstreamSessions:
-    """Direct session for provider APIs; only Telegram uses Clash."""
+    """Provider session with an explicit proxy only for hosts that need it."""
 
     direct: ClientSession
+    proxy_url: str | None = None
 
     def request(self, method: str, url: str, **kwargs: Any) -> Any:
+        if self.proxy_url and urlparse(url).netloc in PROXIED_API_HOSTS:
+            kwargs.setdefault("proxy", self.proxy_url)
         return self.direct.request(method, url, **kwargs)
 
     def get(self, url: str, **kwargs: Any) -> Any:
@@ -390,6 +410,35 @@ async def fetch_jikan_pictures(session: UpstreamSessions, mal_id: int) -> list[t
     return pairs
 
 
+async def fetch_shikimori_poster(
+    session: UpstreamSessions, mal_id: int
+) -> list[tuple[str, str]]:
+    """Keep the source artwork available when AniList becomes the preferred cover."""
+    query = (
+        "query($ids:String!){animes(ids:$ids,limit:1)"
+        "{poster{originalUrl mainUrl}}}"
+    )
+    try:
+        data = await fetch_json(
+            session,
+            f"{SHIKIMORI_ORIGIN}/api/graphql",
+            json_payload={"query": query, "variables": {"ids": str(mal_id)}},
+        )
+        animes = as_mapping(data).get("data")
+        items = as_mapping(animes).get("animes")
+        first = items[0] if isinstance(items, list) and items else {}
+        poster = as_mapping(as_mapping(first).get("poster"))
+        url = as_text(poster.get("originalUrl") or poster.get("mainUrl"))
+        thumb = as_text(poster.get("mainUrl") or poster.get("originalUrl"))
+    except Exception:
+        logging.warning("Shikimori GraphQL poster fetch failed for %s", mal_id, exc_info=True)
+        data = await fetch_json(session, f"{SHIKIMORI_ORIGIN}/api/animes/{mal_id}")
+        image = as_mapping(as_mapping(data).get("image"))
+        url = absolute_url(as_text(image.get("original") or image.get("preview")))
+        thumb = absolute_url(as_text(image.get("preview") or image.get("original")))
+    return [(url, thumb or url)] if url and allowed_image(url) else []
+
+
 async def fetch_anilist_covers(
     session: UpstreamSessions, mal_ids: list[int]
 ) -> dict[int, tuple[str, str]]:
@@ -454,15 +503,16 @@ def allowed_image(url: str) -> bool:
 
 
 async def collect_posters(session: UpstreamSessions, mal_id: int) -> list[dict[str, str]]:
-    """Alternative posters from AniList and Jikan (MAL pictures); Shikimori ids match MAL ids."""
+    """Alternative posters from AniList, Shikimori and MAL; Shikimori ids match MAL ids."""
     results = await asyncio.gather(
         fetch_anilist_cover(session, mal_id),
-        fetch_jikan_pictures(session, mal_id),
+        fetch_shikimori_poster(session, mal_id),
+        asyncio.wait_for(fetch_jikan_pictures(session, mal_id), timeout=POSTER_FETCH_TIMEOUT),
         return_exceptions=True,
     )
     posters: list[dict[str, str]] = []
     seen: set[str] = set()
-    for source, result in zip(("anilist", "mal"), results, strict=True):
+    for source, result in zip(("anilist", "shikimori", "mal"), results, strict=True):
         if isinstance(result, BaseException):
             logging.warning("poster fetch (%s) failed for %s: %s", source, mal_id, result)
             continue
@@ -616,7 +666,7 @@ def find_rendered_card(settings: Settings, image_hash: str, index: dict[str, str
 
 
 def webapp_url(settings: Settings, query_text: str = "") -> str:
-    params = {}
+    params = {"v": WEBAPP_ASSET_VERSION}
     if query_text and not parse_card_query(query_text):
         params["q"] = query_text
     query = f"?{urlencode(params)}" if params else ""
@@ -803,15 +853,20 @@ async def create_web_app(
 ) -> web.Application:
     settings.rendered_dir.mkdir(parents=True, exist_ok=True)
     app = web.Application(client_max_size=8 * 1024 * 1024)
-    html_path = Path(__file__).with_name("webapp.html")
-    static_dir = Path(__file__).with_name("static")
+    webapp_html = WEBAPP_HTML_PATH.read_text().replace(
+        "{{ASSET_VERSION}}", WEBAPP_ASSET_VERSION
+    )
     poster_cache: TTLCache[list[dict[str, str]]] = TTLCache(ttl=3600)
     trending_cache: TTLCache[list[Anime]] = TTLCache(ttl=1800)
     upload_limiter = SlidingWindowRateLimiter(settings.rendered_uploads_per_hour, 3600)
     rendered_lock = asyncio.Lock()
 
-    async def webapp_page(_: web.Request) -> web.FileResponse:
-        return web.FileResponse(html_path)
+    async def webapp_page(_: web.Request) -> web.Response:
+        return web.Response(
+            text=webapp_html,
+            content_type="text/html",
+            headers={"Cache-Control": "no-store"},
+        )
 
     def require_webapp(request: web.Request) -> str:
         init_data = request.headers.get("X-Telegram-Init-Data", "")
@@ -986,7 +1041,7 @@ async def create_web_app(
 
     app.router.add_get("/healthz", healthz)
     app.router.add_get("/", webapp_page)
-    app.router.add_static("/static/", static_dir, name="static")
+    app.router.add_static("/static/", WEBAPP_STATIC_DIR, name="static")
     app.router.add_get("/api/search", search_api)
     app.router.add_get("/api/trending", trending_api)
     app.router.add_get("/api/anime/{anime_id}/genres", genres_api)
@@ -1009,7 +1064,7 @@ async def main() -> None:
         timeout=ClientTimeout(total=15),
         connector=TCPConnector(family=socket.AF_INET, ttl_dns_cache=300),
     ) as direct_session:
-        upstream = UpstreamSessions(direct_session)
+        upstream = UpstreamSessions(direct_session, settings.proxy_url)
         bot_session = AiohttpSession(proxy=settings.proxy_url) if settings.proxy_url else None
         bot = Bot(settings.bot_token, session=bot_session)
         dp = Dispatcher()

@@ -2,8 +2,10 @@
   'use strict';
 
   const tg = window.Telegram?.WebApp;
-  const inTelegram = Boolean(tg?.initData);
-  const apiHeaders = tg?.initData ? { 'X-Telegram-Init-Data': tg.initData } : {};
+  const hasTelegramAuth = Boolean(tg?.initData);
+  const telegramPlatform = String(tg?.platform || 'unknown').toLowerCase();
+  const inTelegram = hasTelegramAuth || telegramPlatform !== 'unknown';
+  const apiHeaders = hasTelegramAuth ? { 'X-Telegram-Init-Data': tg.initData } : {};
   const apiFetch = (url, options = {}) => fetch(url, {
     ...options,
     headers: { ...apiHeaders, ...(options.headers || {}) },
@@ -13,24 +15,24 @@
   const T = RU ? {
     tagline: 'Конструктор аниме-карточек', placeholder: 'Название аниме', search: 'Поиск',
     recent: 'Недавние запросы', trending: 'Сейчас смотрят', noResults: 'Ничего не нашлось',
-    searchError: 'Поиск временно недоступен', retry: 'Повторить', back: 'К поиску',
+    searchError: 'Поиск временно недоступен', retry: 'Повторить', back: 'К поиску', clear: 'Очистить поиск',
     poster: 'Постер', style: 'Стиль карточки', title: 'Название', elements: 'Элементы',
     titleRu: 'Русское', titleOrig: 'Оригинал', score: 'Оценка', genres: 'Жанры', mark: 'Подпись',
     share: 'Отправить карточку', download: 'Скачать JPEG', uploading: 'Загружаем…',
     empty: 'Введите хотя бы две буквы, чтобы найти аниме.', posterError: 'Не удалось загрузить постер.',
     shareError: 'Не получилось отправить карточку. Попробуйте ещё раз.', copied: 'Скопировано: ',
-    eps: 'эп.', ongoing: 'онгоинг', anons: 'анонс', exclusive: 'ЭКСКЛЮЗИВ',
+    eps: 'эп.', ongoing: 'онгоинг', anons: 'анонс', exclusive: 'ЭКСКЛЮЗИВ', loadingPosters: 'Загружаем варианты…',
     presets: { classic: 'Классика', aurora: 'Аврора', glass: 'Стекло', neon: 'Неон', vhs: 'VHS', manga: 'Манга', mag: 'Журнал', polaroid: 'Полароид', print: 'Принт' },
   } : {
     tagline: 'Anime card maker', placeholder: 'Anime title', search: 'Search',
     recent: 'Recent searches', trending: 'Airing now', noResults: 'Nothing found',
-    searchError: 'Search is temporarily unavailable', retry: 'Retry', back: 'Back to search',
+    searchError: 'Search is temporarily unavailable', retry: 'Retry', back: 'Back to search', clear: 'Clear search',
     poster: 'Poster', style: 'Card style', title: 'Title', elements: 'Elements',
     titleRu: 'Russian', titleOrig: 'Original', score: 'Score', genres: 'Genres', mark: 'Watermark',
     share: 'Share card', download: 'Download JPEG', uploading: 'Uploading…',
     empty: 'Enter at least two characters to search for anime.', posterError: 'Could not load poster.',
     shareError: 'Could not send the card. Please try again.', copied: 'Copied: ',
-    eps: 'ep.', ongoing: 'airing', anons: 'soon', exclusive: 'EXCLUSIVE',
+    eps: 'ep.', ongoing: 'airing', anons: 'soon', exclusive: 'EXCLUSIVE', loadingPosters: 'Loading options…',
     presets: { classic: 'Classic', aurora: 'Aurora', glass: 'Glass', neon: 'Neon', vhs: 'VHS', manga: 'Manga', mag: 'Magazine', polaroid: 'Polaroid', print: 'Print' },
   };
   const PRESETS = [
@@ -66,11 +68,13 @@
   document.body.classList.toggle('mode-telegram', inTelegram);
   document.body.classList.toggle('mode-browser', !inTelegram);
 
-  tg?.ready();
-  tg?.expand();
-  tg?.setHeaderColor?.('#f7f7f2');
-  tg?.setBackgroundColor?.('#f7f7f2');
-  tg?.disableVerticalSwipes?.();
+  if (inTelegram) {
+    tg?.ready();
+    tg?.expand();
+    tg?.setHeaderColor?.('#f7f7f2');
+    tg?.setBackgroundColor?.('#f7f7f2');
+    tg?.disableVerticalSwipes?.();
+  }
 
   function proxyUrl(url) { return `/api/image?url=${encodeURIComponent(url)}`; }
   function metaLine(anime) {
@@ -85,7 +89,17 @@
   }
   function icon(kind) {
     if (kind === 'search') return h('svg', { width: 17, height: 17, viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': true }, h('circle', { cx: 11, cy: 11, r: 6, stroke: 'currentColor', strokeWidth: 2 }), h('path', { d: 'm16 16 4 4', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' }));
-    return h('span', { 'aria-hidden': true }, '‹');
+    return h('svg', { width: 20, height: 20, viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': true }, h('path', { d: 'm15 18-6-6 6-6', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' }));
+  }
+
+  function mergePosters(current, incoming) {
+    const seen = new Set(current.map((item) => item.url));
+    const merged = [...current];
+    for (const item of incoming || []) {
+      if (!item?.url || seen.has(item.url)) continue;
+      seen.add(item.url); merged.push(item);
+    }
+    return merged;
   }
 
   const imageCache = new Map();
@@ -241,7 +255,7 @@
     const activeItems = query.trim().length >= 2 ? results : trending || [];
     return h('main', { className: 'app-shell' },
       h('header', { className: 'app-header' }, h('div', { className: 'brand-mark' }, 'S'), h('div', { className: 'header-copy' }, h(Heading, { as: 'h1', size: 'lg' }, 'Shiki Cards'), h('p', null, T.tagline))),
-      h(Card, { className: 'search-panel', variant: 'elevated', padding: 'md' }, h('div', { className: `search-field${query ? ' has-clear' : ''}` }, h('span', { key: 'icon', className: 'search-icon', 'aria-hidden': true }, icon('search')), h(Input, { key: 'input', inputSize: 'lg', placeholder: T.placeholder, value: query, onChange: (event) => setQuery(event.target.value), 'aria-label': T.placeholder }), query && h(Button, { key: 'clear', className: 'clear-search', variant: 'ghost', size: 'sm', type: 'button', onClick: () => setQuery(''), 'aria-label': 'Clear search' }, '×'))),
+      h(Card, { className: 'search-panel', variant: 'elevated', padding: 'md' }, h('div', { className: `search-field${query ? ' has-clear' : ''}` }, h('span', { key: 'icon', className: 'search-icon', 'aria-hidden': true }, icon('search')), h(Input, { key: 'input', inputSize: 'lg', placeholder: T.placeholder, value: query, onChange: (event) => setQuery(event.target.value), 'aria-label': T.placeholder }), query && h(Button, { key: 'clear', className: 'clear-search', variant: 'ghost', size: 'sm', type: 'button', onClick: () => setQuery(''), 'aria-label': T.clear }, '×'))),
       !query && history.length ? h('section', null, h('h2', { className: 'section-title' }, T.recent), h('div', { className: 'history' }, history.map((item) => h(Button, { key: item, variant: 'outline', size: 'sm', type: 'button', onClick: () => setQuery(item) }, item)))) : null,
       h('section', null, h('h2', { className: 'section-title' }, query ? T.search : T.trending), loading || (!query && trending === null) ? h('div', { className: 'loading-row' }, h(Spinner, null)) : error ? h(Alert, { variant: 'danger' }, error) : query && !activeItems.length ? h('div', { className: 'empty-state' }, h(Heading, { as: 'h3', size: 'sm' }, T.noResults), h('p', null, T.empty)) : h('div', { className: 'result-list' }, activeItems.map((anime) => h(SearchResult, { key: `${anime.source}-${anime.id}`, anime, onPick: pick })))),
     );
@@ -251,14 +265,14 @@
     const canvasRef = useRef(null);
     const [poster, setPoster] = useState(anime.image_url); const [posters, setPosters] = useState([{ url: anime.image_url, thumb: anime.image_preview || anime.image_url, source: anime.image_source || anime.source }]);
     const [preset, setPreset] = useState('classic'); const [titleLanguage, setTitleLanguage] = useState(RU && anime.title !== anime.name ? 'ru' : 'orig');
-    const [options, setOptions] = useState({ score: true, genres: true, mark: true }); const [sending, setSending] = useState(false);
+    const [options, setOptions] = useState({ score: true, genres: true, mark: true }); const [sending, setSending] = useState(false); const [postersLoading, setPostersLoading] = useState(true);
     const displayTitle = titleLanguage === 'orig' ? anime.name : anime.title;
     useEffect(() => {
       let active = true;
       apiFetch(`/api/anime/${anime.id}/posters`).then((response) => response.ok ? response.json() : { posters: [] }).then((data) => {
         if (!active) return;
-        setPosters((current) => { const seen = new Set(current.map((item) => item.url)); return [...current, ...(data.posters || []).filter((item) => item.url && !seen.has(item.url))]; });
-      }).catch(() => {});
+        setPosters((current) => mergePosters(current, data.posters));
+      }).catch(() => {}).finally(() => { if (active) setPostersLoading(false); });
       return () => { active = false; };
     }, [anime.id]);
     useEffect(() => {
@@ -284,11 +298,13 @@
       } catch (_) { tg?.HapticFeedback?.notificationOccurred?.('error'); notify(T.shareError); }
       finally { tg?.MainButton?.hideProgress?.(); setSending(false); }
     };
-    const download = () => { const link = document.createElement('a'); link.download = `shiki-card-${anime.id}.jpg`; link.href = canvasRef.current.toDataURL('image/jpeg', .92); link.click(); };
+    const download = () => { const link = document.createElement('a'); link.download = `shiki-card-${anime.id}.jpg`; link.href = canvasRef.current.toDataURL('image/jpeg', .92); document.body.appendChild(link); link.click(); link.remove(); };
     useEffect(() => { tg?.BackButton?.show?.(); tg?.BackButton?.onClick?.(onBack); return () => { tg?.BackButton?.hide?.(); tg?.BackButton?.offClick?.(onBack); }; }, [onBack]);
-    const posterChoices = posters.map((item) => h('button', {
+    const posterChoices = posters.map((item, index) => h('button', {
       key: item.url, className: `poster-choice${poster === item.url ? ' is-selected' : ''}`, type: 'button',
       onClick: () => { setPoster(item.url); tg?.HapticFeedback?.selectionChanged?.(); },
+      'aria-label': `${T.poster}: ${SRC_BADGE[item.source] || 'IMG'} ${index + 1}`,
+      'aria-pressed': poster === item.url,
     }, h('img', { src: proxyUrl(item.thumb || item.url), alt: '' }), h('span', { className: 'poster-source' }, SRC_BADGE[item.source] || 'IMG')));
     const styleChoices = PRESETS.map(([id, color]) => h('button', {
       key: id, className: `style-choice${preset === id ? ' is-selected' : ''}`, type: 'button',
@@ -307,13 +323,16 @@
         h(Card, { className: 'preview-card', variant: 'elevated', key: 'preview' }, h('canvas', { className: 'card-canvas', ref: canvasRef, width: 720, height: 1080 })),
         h('div', { className: 'editor-controls', key: 'controls' }, [
           h('section', { className: 'editor-section style-section', key: 'style' }, [h('h2', { key: 'heading' }, T.style), h('div', { className: 'preset-carousel', key: 'choices' }, styleChoices)]),
-          h('section', { className: 'editor-section', key: 'poster' }, [h('h2', { key: 'heading' }, T.poster), h('div', { className: 'poster-strip', key: 'choices' }, posterChoices)]),
+          h('section', { className: 'editor-section', key: 'poster' }, [
+            h('div', { className: 'section-heading', key: 'heading' }, [h('h2', { key: 'title' }, T.poster), postersLoading ? h('span', { className: 'poster-loading', role: 'status', key: 'loading' }, T.loadingPosters) : null]),
+            h('div', { className: 'poster-strip', key: 'choices' }, posterChoices),
+          ]),
           anime.title !== anime.name ? h('section', { className: 'editor-section', key: 'title-language' }, [h('h2', { key: 'heading' }, T.title), h('div', { className: 'history', key: 'choices' }, [['ru', T.titleRu], ['orig', T.titleOrig]].map(([id, label]) => h(Button, { key: id, type: 'button', size: 'sm', variant: titleLanguage === id ? 'primary' : 'outline', onClick: () => setTitleLanguage(id) }, label)))]) : null,
           h('section', { className: 'editor-section', key: 'elements' }, [h('h2', { key: 'heading' }, T.elements), h('div', { className: 'toggle-list', key: 'switches' }, switches)]),
         ]),
         h('div', { className: 'action-stack', key: 'actions' }, inTelegram
-          ? h(Button, { type: 'button', size: 'lg', loading: sending, onClick: share }, sending ? T.uploading : T.share)
-          : h(Button, { type: 'button', size: 'lg', onClick: download }, T.download)),
+          ? h(Button, { className: 'primary-action', type: 'button', size: 'lg', loading: sending, onClick: share }, sending ? T.uploading : T.share)
+          : h(Button, { className: 'primary-action', type: 'button', size: 'lg', onClick: download }, T.download)),
       ]),
     ]);
   }

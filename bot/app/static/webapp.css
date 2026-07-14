@@ -20,6 +20,7 @@ button, input { font: inherit; }
 .anime-result { width: 100%; min-width: 0; padding: 0; text-align: left; border: 0; background: transparent; cursor: pointer; color: inherit; }
 .anime-result > div { width: 100%; min-width: 0; padding: 0; overflow: hidden; transition: transform .15s ease, box-shadow .15s ease; }
 .anime-result:active > div { transform: scale(.985); }
+.anime-result:focus-visible, .poster-choice:focus-visible, .style-choice:focus-visible { outline: 3px solid #4a6638; outline-offset: 3px; }
 .result-content { display: flex; gap: 12px; align-items: center; padding: 12px; }
 .result-poster { width: 58px; height: 78px; flex: 0 0 58px; border-radius: 9px; object-fit: cover; background: #e6e7df; }
 .result-copy { min-width: 0; flex: 1; }
@@ -37,11 +38,13 @@ button, input { font: inherit; }
 .editor-title h1 { overflow: hidden; margin: 0; font-size: 21px; text-overflow: ellipsis; white-space: nowrap; }
 .editor-title p { overflow: hidden; margin: 3px 0 0; color: #65705f; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .editor-layout { display: grid; grid-template-areas: "preview" "controls" "actions"; gap: 20px; min-width: 0; }
-.preview-card { grid-area: preview; width: min(100%, 360px); justify-self: center; padding: 8px; }
+.preview-card { grid-area: preview; width: min(100%, 360px); justify-self: center; padding: 8px; pointer-events: none; user-select: none; }
 .card-canvas { display: block; width: 100%; height: auto; border-radius: 10px; background: #e5e6de; }
 .editor-controls { grid-area: controls; display: grid; gap: 20px; min-width: 0; }
 .editor-section { min-width: 0; }
-.editor-section > h2 { margin: 0 0 10px; color: #4c5945; font: 700 15px Lora, Georgia, serif; }
+.editor-section > h2, .section-heading h2 { margin: 0 0 10px; color: #4c5945; font: 700 15px Lora, Georgia, serif; }
+.section-heading { display: flex; min-height: 22px; align-items: baseline; justify-content: space-between; gap: 12px; }
+.poster-loading { color: #65705f; font-size: 11px; white-space: nowrap; }
 .poster-strip, .preset-carousel { display: flex; gap: 8px; overflow-x: auto; padding: 2px 0 6px; scrollbar-width: none; scroll-snap-type: x proximity; }
 .poster-strip::-webkit-scrollbar, .preset-carousel::-webkit-scrollbar { display: none; }
 .poster-choice { position: relative; width: 68px; height: 92px; flex: 0 0 68px; padding: 0; border: 2px solid transparent; border-radius: 9px; overflow: hidden; background: #e6e7df; }
@@ -55,8 +58,8 @@ button, input { font: inherit; }
 .style-dot { display: inline-block; width: 8px; height: 8px; border-radius: 999px; margin-right: 4px; vertical-align: 1px; }
 .toggle-list { display: grid; gap: 1px; padding: 4px 12px; border-radius: 10px; background: #f1f2ec; }
 .toggle-list .ds-switch { padding: 10px 0; }
-.action-stack { grid-area: actions; display: grid; gap: 10px; }
-.action-stack .ds-button { width: 100%; min-height: 48px; }
+.action-stack { grid-area: actions; display: grid; gap: 10px; align-self: start; }
+.action-stack .primary-action { width: 100%; min-height: 48px; }
 .toast { position: fixed; z-index: 10; right: 16px; bottom: calc(18px + env(safe-area-inset-bottom)); max-width: calc(100% - 32px); padding: 11px 14px; border-radius: 9px; background: #23361a; color: #fff; font-size: 13px; box-shadow: 0 10px 25px rgba(35,54,26,.22); }
 @media (min-width: 600px) {
   .app-shell { padding-left: 24px; padding-right: 24px; }
@@ -66,8 +69,12 @@ button, input { font: inherit; }
 @media (min-width: 1025px) {
   .editor-shell { width: min(100%, 1160px); }
   .editor-header { margin-bottom: 24px; }
-  .editor-layout { grid-template-columns: minmax(0, 1fr) minmax(340px, 460px); grid-template-areas: "controls preview" "controls actions"; column-gap: 32px; row-gap: 16px; align-items: start; }
+  .editor-layout { grid-template-columns: minmax(0, 1fr) minmax(340px, 400px); grid-template-areas: "controls actions" "controls preview"; column-gap: 32px; row-gap: 16px; align-items: start; }
   .preview-card { position: sticky; top: 24px; width: 100%; max-width: none; }
   .preset-carousel { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); overflow: visible; }
   .style-choice { width: auto; flex-basis: auto; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .anime-result > div { transition: none; }
+  .anime-result:active > div { transform: none; }
 }
