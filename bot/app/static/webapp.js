@@ -5,6 +5,8 @@
   const hasTelegramAuth = Boolean(tg?.initData);
   const telegramPlatform = String(tg?.platform || 'unknown').toLowerCase();
   const inTelegram = hasTelegramAuth || telegramPlatform !== 'unknown';
+  const assetVersion = document.documentElement.dataset.assetVersion || '';
+  const logoUrl = `/static/shikizilla-logo.png${assetVersion ? `?v=${encodeURIComponent(assetVersion)}` : ''}`;
   const apiHeaders = hasTelegramAuth ? { 'X-Telegram-Init-Data': tg.initData } : {};
   const apiFetch = (url, options = {}) => fetch(url, {
     ...options,
@@ -60,7 +62,7 @@
     print: { score: [668, 752], genres: { minY: 790, maxY: 990, alternateY: 960 } },
   };
   const HISTORY_KEY = 'shiki:recent';
-  const SRC_BADGE = { shikimori: 'SHIKI', mal: 'MAL', anilist: 'AL' };
+  const SRC_BADGE = { shikimori: 'SHIKI', jikan: 'JIKAN', mal: 'MAL', anilist: 'AL' };
   const STATUS = { ongoing: T.ongoing, anons: T.anons };
   const { createElement: h, useCallback, useEffect, useMemo, useRef, useState } = window.React;
   const { Alert, Button, Card, Heading, Input, Spinner, Switch, Tag, Text } = window.GlEpkaDS;
@@ -176,7 +178,7 @@
       if (preset === 'glass') { context.fillStyle = 'rgba(237,240,229,.18)'; rounded(context, 24, 665, W - 48, 360, 24); context.fill(); }
       if (preset === 'neon') { context.strokeStyle = '#8bd74c'; context.lineWidth = 5; rounded(context, 20, 20, W - 40, H - 40, 24); context.stroke(); }
       if (preset === 'vhs') { context.fillStyle = 'rgba(0,0,0,.16)'; for (let y = 0; y < H; y += 7) context.fillRect(0, y, W, 2); }
-      if (preset === 'mag') { context.textAlign = 'center'; context.font = '700 80px Lora, serif'; context.fillStyle = '#fff'; context.fillText('SHIKI', W / 2, 100); context.textAlign = 'left'; }
+      if (preset === 'mag') { context.textAlign = 'center'; context.font = '700 64px Lora, serif'; context.fillStyle = '#fff'; context.fillText('SHIKIZILLA', W / 2, 100); context.textAlign = 'left'; }
     }
     context.fillStyle = foreground; context.font = '700 50px Lora, Georgia, serif'; context.textBaseline = 'top';
     let y = contentY;
@@ -199,7 +201,7 @@
       if (collides) genreY = layout.genres.alternateY;
       context.fillStyle = foreground; context.globalAlpha = .78; context.fillText(genreText, contentX, genreY); context.globalAlpha = 1;
     }
-    if (options.mark) { context.font = '700 17px Manrope, sans-serif'; context.fillStyle = preset === 'print' || preset === 'manga' || preset === 'polaroid' || preset === 'aurora' ? accent : 'rgba(255,255,255,.62)'; context.fillText('SHIKI · CARDS', contentX, H - 44); }
+    if (options.mark) { context.font = '700 17px Manrope, sans-serif'; context.fillStyle = preset === 'print' || preset === 'manga' || preset === 'polaroid' || preset === 'aurora' ? accent : 'rgba(255,255,255,.62)'; context.fillText('SHIKIZILLA', contentX, H - 44); }
     context.textBaseline = 'alphabetic';
   }
 
@@ -254,7 +256,7 @@
     const pick = useCallback((anime) => { storeHistory(query.trim()); onPick(anime); }, [query, onPick]);
     const activeItems = query.trim().length >= 2 ? results : trending || [];
     return h('main', { className: 'app-shell' },
-      h('header', { className: 'app-header' }, h('div', { className: 'brand-mark' }, 'S'), h('div', { className: 'header-copy' }, h(Heading, { as: 'h1', size: 'lg' }, 'Shiki Cards'), h('p', null, T.tagline))),
+      h('header', { className: 'app-header' }, h('div', { className: 'brand-mark', 'aria-hidden': true }, h('img', { src: logoUrl, alt: '' })), h('div', { className: 'header-copy' }, h(Heading, { as: 'h1', size: 'lg' }, 'Shikizilla'), h('p', null, T.tagline))),
       h(Card, { className: 'search-panel', variant: 'elevated', padding: 'md' }, h('div', { className: `search-field${query ? ' has-clear' : ''}` }, h('span', { key: 'icon', className: 'search-icon', 'aria-hidden': true }, icon('search')), h(Input, { key: 'input', inputSize: 'lg', placeholder: T.placeholder, value: query, onChange: (event) => setQuery(event.target.value), 'aria-label': T.placeholder }), query && h(Button, { key: 'clear', className: 'clear-search', variant: 'ghost', size: 'sm', type: 'button', onClick: () => setQuery(''), 'aria-label': T.clear }, '×'))),
       !query && history.length ? h('section', null, h('h2', { className: 'section-title' }, T.recent), h('div', { className: 'history' }, history.map((item) => h(Button, { key: item, variant: 'outline', size: 'sm', type: 'button', onClick: () => setQuery(item) }, item)))) : null,
       h('section', null, h('h2', { className: 'section-title' }, query ? T.search : T.trending), loading || (!query && trending === null) ? h('div', { className: 'loading-row' }, h(Spinner, null)) : error ? h(Alert, { variant: 'danger' }, error) : query && !activeItems.length ? h('div', { className: 'empty-state' }, h(Heading, { as: 'h3', size: 'sm' }, T.noResults), h('p', null, T.empty)) : h('div', { className: 'result-list' }, activeItems.map((anime) => h(SearchResult, { key: `${anime.source}-${anime.id}`, anime, onPick: pick })))),
@@ -298,7 +300,7 @@
       } catch (_) { tg?.HapticFeedback?.notificationOccurred?.('error'); notify(T.shareError); }
       finally { tg?.MainButton?.hideProgress?.(); setSending(false); }
     };
-    const download = () => { const link = document.createElement('a'); link.download = `shiki-card-${anime.id}.jpg`; link.href = canvasRef.current.toDataURL('image/jpeg', .92); document.body.appendChild(link); link.click(); link.remove(); };
+    const download = () => { const link = document.createElement('a'); link.download = `shikizilla-${anime.id}.jpg`; link.href = canvasRef.current.toDataURL('image/jpeg', .92); document.body.appendChild(link); link.click(); link.remove(); };
     useEffect(() => { tg?.BackButton?.show?.(); tg?.BackButton?.onClick?.(onBack); return () => { tg?.BackButton?.hide?.(); tg?.BackButton?.offClick?.(onBack); }; }, [onBack]);
     const posterChoices = posters.map((item, index) => h('button', {
       key: item.url, className: `poster-choice${poster === item.url ? ' is-selected' : ''}`, type: 'button',

@@ -20,6 +20,7 @@ from app.main import (
     cleanup_rendered_dir,
     collect_posters,
     create_web_app,
+    fetch_jikan_pictures,
     parse_card_query,
     validate_webapp_init_data,
     webapp_url,
@@ -138,6 +139,49 @@ def test_collect_posters_keeps_source_artwork_when_jikan_is_unavailable() -> Non
 
         assert [poster["source"] for poster in posters] == ["anilist", "shikimori"]
         assert [poster["url"] for poster in posters] == [anilist, shikimori]
+
+    asyncio.run(check())
+
+
+def test_collect_posters_exposes_jikan_as_its_own_source() -> None:
+    async def check() -> None:
+        anilist = "https://s4.anilist.co/file/cover.jpg"
+        shikimori = "https://shikimori.io/uploads/poster.jpg"
+        jikan = "https://cdn.myanimelist.net/images/anime/1/2l.jpg"
+        with (
+            patch("app.main.fetch_anilist_cover", AsyncMock(return_value=[(anilist, anilist)])),
+            patch(
+                "app.main.fetch_shikimori_poster",
+                AsyncMock(return_value=[(shikimori, shikimori)]),
+            ),
+            patch("app.main.fetch_jikan_pictures", AsyncMock(return_value=[(jikan, jikan)])),
+        ):
+            posters = await collect_posters(object(), 17)  # type: ignore[arg-type]
+
+        assert [poster["source"] for poster in posters] == [
+            "anilist",
+            "shikimori",
+            "jikan",
+        ]
+
+    asyncio.run(check())
+
+
+def test_jikan_pictures_falls_back_to_primary_artwork() -> None:
+    async def check() -> None:
+        url = "https://cdn.myanimelist.net/images/anime/1/2l.jpg"
+        thumb = "https://cdn.myanimelist.net/images/anime/1/2.jpg"
+        fetch = AsyncMock(
+            side_effect=[
+                {"data": {"images": {"jpg": {"large_image_url": url, "image_url": thumb}}}},
+                TimeoutError,
+            ]
+        )
+        with patch("app.main.fetch_json", fetch):
+            pictures = await fetch_jikan_pictures(object(), 17)  # type: ignore[arg-type]
+
+        assert pictures == [(url, thumb)]
+        assert fetch.await_count == 2
 
     asyncio.run(check())
 

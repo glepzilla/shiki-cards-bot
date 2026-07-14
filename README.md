@@ -1,4 +1,4 @@
-# Shiki Cards Bot
+# Shikizilla
 
 Telegram inline-бот и WebApp для поиска аниме на Shikimori и создания карточек для отправки в чаты.
 

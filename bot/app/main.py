@@ -52,7 +52,10 @@ ANILIST_API = "https://graphql.anilist.co"
 USER_AGENT = "shiki-cards-bot/0.2"
 UPSTREAM_REQUEST_TIMEOUT = 4.0
 INLINE_SEARCH_TIMEOUT = 8.0
-POSTER_FETCH_TIMEOUT = 3.0
+# Jikan is reached through the explicit proxy. Fetch its stable primary image
+# first, then allow a bounded best-effort request for the optional gallery.
+POSTER_FETCH_TIMEOUT = 14.0
+JIKAN_GALLERY_TIMEOUT = 5.0
 MAX_RENDERED_IMAGE_BYTES = 5 * 1024 * 1024
 MAX_PROXY_IMAGE_BYTES = 5 * 1024 * 1024
 ALLOWED_IMAGE_HOSTS = {
@@ -70,6 +73,7 @@ WEBAPP_HTML_PATH = WEBAPP_DIR / "webapp.html"
 WEBAPP_STATIC_DIR = WEBAPP_DIR / "static"
 WEBAPP_VERSIONED_ASSETS = (
     WEBAPP_HTML_PATH,
+    WEBAPP_STATIC_DIR / "shikizilla-logo.png",
     WEBAPP_STATIC_DIR / "webapp.css",
     WEBAPP_STATIC_DIR / "webapp.js",
     WEBAPP_STATIC_DIR / "ds" / "_ds_bundle.css",
@@ -399,13 +403,30 @@ async def trending_anime(session: UpstreamSessions, cache: TTLCache[list[Anime]]
 
 
 async def fetch_jikan_pictures(session: UpstreamSessions, mal_id: int) -> list[tuple[str, str]]:
-    data = await fetch_json(session, f"{JIKAN_API}/anime/{mal_id}/pictures")
-    pairs: list[tuple[str, str]] = []
+    details = await fetch_json(session, f"{JIKAN_API}/anime/{mal_id}")
+    images = as_mapping(as_mapping(details).get("data")).get("images")
+    jpg = as_mapping(as_mapping(images).get("jpg"))
+    primary_url = as_text(jpg.get("large_image_url") or jpg.get("image_url"))
+    primary_thumb = as_text(jpg.get("image_url") or jpg.get("large_image_url"))
+    pairs = [(primary_url, primary_thumb or primary_url)] if primary_url else []
+    seen = {primary_url} if primary_url else set()
+    try:
+        data = await asyncio.wait_for(
+            fetch_json(session, f"{JIKAN_API}/anime/{mal_id}/pictures"),
+            timeout=JIKAN_GALLERY_TIMEOUT,
+        )
+    except Exception:
+        # Jikan's pictures route occasionally returns a gateway timeout while
+        # the regular anime route stays healthy. Keep the provider available
+        # with its primary MAL artwork until the gallery recovers.
+        logging.warning("Jikan pictures failed for %s; using primary artwork", mal_id)
+        return pairs
     for item in data.get("data") or []:
         jpg = item.get("jpg") or {}
         url = jpg.get("large_image_url") or jpg.get("image_url")
         thumb = jpg.get("image_url") or jpg.get("large_image_url")
-        if url:
+        if url and url not in seen:
+            seen.add(url)
             pairs.append((str(url), str(thumb or url)))
     return pairs
 
@@ -503,7 +524,7 @@ def allowed_image(url: str) -> bool:
 
 
 async def collect_posters(session: UpstreamSessions, mal_id: int) -> list[dict[str, str]]:
-    """Alternative posters from AniList, Shikimori and MAL; Shikimori ids match MAL ids."""
+    """Alternative posters from AniList, Shikimori and Jikan."""
     results = await asyncio.gather(
         fetch_anilist_cover(session, mal_id),
         fetch_shikimori_poster(session, mal_id),
@@ -512,7 +533,7 @@ async def collect_posters(session: UpstreamSessions, mal_id: int) -> list[dict[s
     )
     posters: list[dict[str, str]] = []
     seen: set[str] = set()
-    for source, result in zip(("anilist", "shikimori", "mal"), results, strict=True):
+    for source, result in zip(("anilist", "shikimori", "jikan"), results, strict=True):
         if isinstance(result, BaseException):
             logging.warning("poster fetch (%s) failed for %s: %s", source, mal_id, result)
             continue
@@ -590,7 +611,7 @@ def caption(anime: Anime) -> str:
 def card_caption(meta: dict[str, Any]) -> str:
     title = str(meta.get("title") or "").strip()
     if not title:
-        return "Rendered with Shiki Cards"
+        return "Rendered with Shikizilla"
     text = f"<b>{html.escape(title)}</b>"
     subtitle = str(meta.get("subtitle") or "").strip()
     if subtitle and subtitle != title:
@@ -803,7 +824,7 @@ def build_router(
                     InlineQueryResultCachedPhoto(
                         id=f"card-{card_id}",
                         photo_file_id=file_id,
-                        title=str(meta.get("title") or "Shiki Card"),
+                        title=str(meta.get("title") or "Shikizilla Card"),
                         description="Готовая карточка из WebApp" if ru else "Card from the WebApp",
                         caption=card_caption(meta),
                         parse_mode="HTML",
@@ -913,7 +934,10 @@ async def create_web_app(
         if cached is not None:
             return web.json_response({"posters": cached})
         posters = await collect_posters(session, int(raw_id))
-        poster_cache.put(raw_id, posters)
+        # Do not keep a partial provider response for an hour. A later editor open
+        # should retry Jikan after a transient proxy or upstream failure.
+        if any(poster["source"] == "jikan" for poster in posters):
+            poster_cache.put(raw_id, posters)
         return web.json_response({"posters": posters})
 
     async def image_proxy(request: web.Request) -> web.Response:
@@ -1004,7 +1028,7 @@ async def create_web_app(
             try:
                 message = await bot.send_photo(
                     chat_id=settings.storage_chat_id,
-                    photo=BufferedInputFile(raw, filename=f"shiki-card-{card_id}.jpg"),
+                    photo=BufferedInputFile(raw, filename=f"shikizilla-{card_id}.jpg"),
                 )
                 if not message.photo:
                     raise RuntimeError("Telegram did not return a photo file_id")
