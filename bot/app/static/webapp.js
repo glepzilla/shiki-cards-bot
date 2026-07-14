@@ -29,6 +29,7 @@
     empty: 'Введите хотя бы две буквы, чтобы найти аниме.', posterError: 'Не удалось загрузить постер.',
     shareError: 'Не получилось отправить карточку. Попробуйте ещё раз.', copied: 'Скопировано: ', inlineCopied: 'ID карточки скопирован: ',
     eps: 'эп.', ongoing: 'онгоинг', anons: 'анонс', exclusive: 'ЭКСКЛЮЗИВ', loadingPosters: 'Загружаем варианты…',
+    jikanUnavailable: 'Jikan API временно недоступен. Остальные постеры уже загружены.',
     presets: { classic: 'Классика', aurora: 'Аврора', glass: 'Стекло', neon: 'Неон', vhs: 'VHS', manga: 'Манга', mag: 'Журнал', polaroid: 'Полароид', print: 'Принт' },
   } : {
     tagline: 'Anime card maker', placeholder: 'Anime title', search: 'Search',
@@ -40,6 +41,7 @@
     empty: 'Enter at least two characters to search for anime.', posterError: 'Could not load poster.',
     shareError: 'Could not send the card. Please try again.', copied: 'Copied: ', inlineCopied: 'Card ID copied: ',
     eps: 'ep.', ongoing: 'airing', anons: 'soon', exclusive: 'EXCLUSIVE', loadingPosters: 'Loading options…',
+    jikanUnavailable: 'Jikan API is temporarily unavailable. Other posters are still available.',
     presets: { classic: 'Classic', aurora: 'Aurora', glass: 'Glass', neon: 'Neon', vhs: 'VHS', manga: 'Manga', mag: 'Magazine', polaroid: 'Polaroid', print: 'Print' },
   };
   const PRESETS = [
@@ -67,7 +69,7 @@
     print: { score: [668, 752], genres: { minY: 790, maxY: 990, alternateY: 960 } },
   };
   const HISTORY_KEY = 'shiki:recent';
-  const SRC_BADGE = { shikimori: 'SHIKI', anilist: 'AL' };
+  const SRC_BADGE = { shikimori: 'SHIKI', anilist: 'AL', jikan: 'JIKAN' };
   const STATUS = { ongoing: T.ongoing, anons: T.anons };
   const { createElement: h, useCallback, useEffect, useMemo, useRef, useState } = window.React;
   const { Alert, Button, Card, Heading, Input, Spinner, Switch, Tag, Text } = window.GlEpkaDS;
@@ -284,14 +286,15 @@
     const canvasRef = useRef(null);
     const [poster, setPoster] = useState(anime.image_url); const [posters, setPosters] = useState([{ url: anime.image_url, thumb: anime.image_preview || anime.image_url, source: anime.image_source || anime.source }]);
     const [preset, setPreset] = useState('classic'); const [titleLanguage, setTitleLanguage] = useState(RU && anime.title !== anime.name ? 'ru' : 'orig');
-    const [options, setOptions] = useState({ score: true, genres: true, mark: true }); const [sending, setSending] = useState(false); const [postersLoading, setPostersLoading] = useState(true);
+    const [options, setOptions] = useState({ score: true, genres: true, mark: true }); const [sending, setSending] = useState(false); const [postersLoading, setPostersLoading] = useState(true); const [jikanUnavailable, setJikanUnavailable] = useState(false);
     const displayTitle = titleLanguage === 'orig' ? anime.name : anime.title;
     useEffect(() => {
       let active = true;
-      apiFetch(`/api/anime/${anime.id}/posters`).then((response) => response.ok ? response.json() : { posters: [] }).then((data) => {
+      apiFetch(`/api/anime/${anime.id}/posters`).then((response) => response.ok ? response.json() : { posters: [], warnings: ['jikan'] }).then((data) => {
         if (!active) return;
         setPosters((current) => mergePosters(current, data.posters));
-      }).catch(() => {}).finally(() => { if (active) setPostersLoading(false); });
+        setJikanUnavailable(data.warnings?.includes('jikan') || false);
+      }).catch(() => { if (active) setJikanUnavailable(true); }).finally(() => { if (active) setPostersLoading(false); });
       return () => { active = false; };
     }, [anime.id]);
     useEffect(() => {
@@ -358,6 +361,7 @@
           h('section', { className: 'editor-section style-section', key: 'style' }, [h('h2', { key: 'heading' }, T.style), h('div', { className: 'preset-carousel', key: 'choices' }, styleChoices)]),
           h('section', { className: 'editor-section', key: 'poster' }, [
             h('div', { className: 'section-heading', key: 'heading' }, [h('h2', { key: 'title' }, T.poster), postersLoading ? h('span', { className: 'poster-loading', role: 'status', key: 'loading' }, T.loadingPosters) : null]),
+            jikanUnavailable ? h(Alert, { className: 'poster-warning', variant: 'warning', key: 'warning' }, T.jikanUnavailable) : null,
             h('div', { className: 'poster-strip', key: 'choices' }, posterChoices),
           ]),
           anime.title !== anime.name ? h('section', { className: 'editor-section', key: 'title-language' }, [h('h2', { key: 'heading' }, T.title), h('div', { className: 'history', key: 'choices' }, [['ru', T.titleRu], ['orig', T.titleOrig]].map(([id, label]) => h(Button, { key: id, type: 'button', size: 'sm', variant: titleLanguage === id ? 'primary' : 'outline', onClick: () => setTitleLanguage(id) }, label)))]) : null,

@@ -47,19 +47,24 @@ from app.cache import SlidingWindowRateLimiter, Throttle, TTLCache
 
 SHIKIMORI_ORIGIN = "https://shikimori.io"
 ANILIST_API = "https://graphql.anilist.co"
+JIKAN_API = "https://api.jikan.moe/v4"
 USER_AGENT = "shikizilla/0.2"
 UPSTREAM_REQUEST_TIMEOUT = 4.0
 INLINE_SEARCH_TIMEOUT = 8.0
+JIKAN_FETCH_TIMEOUT = 8.0
+JIKAN_GALLERY_TIMEOUT = 5.0
 MAX_RENDERED_IMAGE_BYTES = 5 * 1024 * 1024
 MAX_PROXY_IMAGE_BYTES = 5 * 1024 * 1024
 ALLOWED_IMAGE_HOSTS = {
     "shikimori.one",
     "shikimori.io",  # Older API payloads may still contain this host.
+    "cdn.myanimelist.net",
     "s4.anilist.co",
 }
 ALLOWED_LINK_HOSTS = {"shikimori.one", "shikimori.io"}
 # Direct access from the VPS to AniList's Cloudflare image edge is unreliable.
 PROXIED_IMAGE_HOSTS = {"s4.anilist.co"}
+PROXIED_API_HOSTS = {"api.jikan.moe"}
 WEBAPP_DIR = Path(__file__).parent
 WEBAPP_HTML_PATH = WEBAPP_DIR / "webapp.html"
 WEBAPP_STATIC_DIR = WEBAPP_DIR / "static"
@@ -229,17 +234,21 @@ class Anime:
 THROTTLES = {
     "shikimori.one": Throttle(0.35),
     "shikimori.io": Throttle(0.35),
+    "api.jikan.moe": Throttle(0.5),
     "graphql.anilist.co": Throttle(0.35),
 }
 
 
 @dataclass(frozen=True, slots=True)
 class UpstreamSessions:
-    """Shared provider session."""
+    """Provider session with an explicit proxy only for hosts that need it."""
 
     direct: ClientSession
+    proxy_url: str | None = None
 
     def request(self, method: str, url: str, **kwargs: Any) -> Any:
+        if self.proxy_url and urlparse(url).netloc in PROXIED_API_HOSTS:
+            kwargs.setdefault("proxy", self.proxy_url)
         return self.direct.request(method, url, **kwargs)
 
     def get(self, url: str, **kwargs: Any) -> Any:
@@ -252,11 +261,13 @@ async def fetch_json(
     *,
     params: dict[str, str] | None = None,
     json_payload: dict[str, Any] | None = None,
+    force_direct: bool = False,
 ) -> Any:
     """GET/POST JSON with per-host throttling and one short retry for transient failures."""
     throttle = THROTTLES.get(urlparse(url).netloc)
     headers = {"User-Agent": USER_AGENT}
     method = "POST" if json_payload is not None else "GET"
+    request_options: dict[str, Any] = {"proxy": None} if force_direct else {}
     for attempt in (0, 1):
         if throttle:
             await throttle.wait()
@@ -268,6 +279,7 @@ async def fetch_json(
                 json=json_payload,
                 headers=headers,
                 timeout=ClientTimeout(total=UPSTREAM_REQUEST_TIMEOUT),
+                **request_options,
             ) as resp:
                 if attempt == 0 and (resp.status == 429 or 500 <= resp.status < 600):
                     if resp.status == 429:
@@ -357,6 +369,52 @@ async def trending_anime(session: UpstreamSessions, cache: TTLCache[list[Anime]]
         animes = await prefer_anilist_covers(session, animes)
         cache.put("__trending__", animes)
     return animes
+
+
+@dataclass(frozen=True, slots=True)
+class PosterProviderResult:
+    posters: list[tuple[str, str]]
+    incomplete: bool = False
+
+
+async def fetch_jikan_json(session: UpstreamSessions, url: str) -> Any:
+    """Try the configured proxy first and use the direct route as a fallback."""
+    try:
+        return await fetch_json(session, url)
+    except Exception:
+        if not session.proxy_url:
+            raise
+        logging.warning("Jikan proxy request failed for %s; trying direct route", url)
+        return await fetch_json(session, url, force_direct=True)
+
+
+async def fetch_jikan_pictures(
+    session: UpstreamSessions, anime_id: int
+) -> PosterProviderResult:
+    details = await fetch_jikan_json(session, f"{JIKAN_API}/anime/{anime_id}")
+    images = as_mapping(as_mapping(details).get("data")).get("images")
+    jpg = as_mapping(as_mapping(images).get("jpg"))
+    primary_url = as_text(jpg.get("large_image_url") or jpg.get("image_url"))
+    primary_thumb = as_text(jpg.get("image_url") or jpg.get("large_image_url"))
+    posters = [(primary_url, primary_thumb or primary_url)] if primary_url else []
+    seen = {primary_url} if primary_url else set()
+    try:
+        data = await asyncio.wait_for(
+            fetch_jikan_json(session, f"{JIKAN_API}/anime/{anime_id}/pictures"),
+            timeout=JIKAN_GALLERY_TIMEOUT,
+        )
+    except Exception:
+        logging.warning("Jikan gallery is unavailable for %s", anime_id, exc_info=True)
+        return PosterProviderResult(posters=posters, incomplete=True)
+
+    for item in as_mapping(data).get("data") or []:
+        jpg = as_mapping(as_mapping(item).get("jpg"))
+        url = as_text(jpg.get("large_image_url") or jpg.get("image_url"))
+        thumb = as_text(jpg.get("image_url") or jpg.get("large_image_url"))
+        if url and url not in seen:
+            seen.add(url)
+            posters.append((url, thumb or url))
+    return PosterProviderResult(posters=posters)
 
 
 async def fetch_shikimori_poster(
@@ -455,27 +513,41 @@ def allowed_image(url: str) -> bool:
     return parsed.scheme == "https" and parsed.netloc in ALLOWED_IMAGE_HOSTS
 
 
-async def collect_posters(session: UpstreamSessions, anime_id: int) -> list[dict[str, str]]:
-    """Alternative posters from AniList and Shikimori."""
+async def collect_posters(
+    session: UpstreamSessions, anime_id: int
+) -> tuple[list[dict[str, str]], list[str]]:
+    """Alternative posters and non-blocking provider warnings."""
     results = await asyncio.gather(
         fetch_anilist_cover(session, anime_id),
         fetch_shikimori_poster(session, anime_id),
+        asyncio.wait_for(
+            fetch_jikan_pictures(session, anime_id), timeout=JIKAN_FETCH_TIMEOUT
+        ),
         return_exceptions=True,
     )
     posters: list[dict[str, str]] = []
+    warnings: list[str] = []
     seen: set[str] = set()
-    for source, result in zip(("anilist", "shikimori"), results, strict=True):
+    for source, result in zip(("anilist", "shikimori", "jikan"), results, strict=True):
         if isinstance(result, BaseException):
             logging.warning("poster fetch (%s) failed for %s: %s", source, anime_id, result)
+            if source == "jikan":
+                warnings.append(source)
             continue
-        for url, thumb in result:
+        if isinstance(result, PosterProviderResult):
+            if result.incomplete:
+                warnings.append(source)
+            pairs = result.posters
+        else:
+            pairs = result
+        for url, thumb in pairs:
             if not allowed_image(url) or url in seen:
                 continue
             seen.add(url)
             posters.append(
                 {"url": url, "thumb": thumb if allowed_image(thumb) else url, "source": source}
             )
-    return posters[:12]
+    return posters[:12], warnings
 
 
 def parse_card_query(text: str) -> str | None:
@@ -849,7 +921,7 @@ async def create_web_app(
     webapp_html = WEBAPP_HTML_PATH.read_text().replace(
         "{{ASSET_VERSION}}", WEBAPP_ASSET_VERSION
     )
-    poster_cache: TTLCache[list[dict[str, str]]] = TTLCache(ttl=3600)
+    poster_cache: TTLCache[dict[str, Any]] = TTLCache(ttl=3600)
     trending_cache: TTLCache[list[Anime]] = TTLCache(ttl=1800)
     upload_limiter = SlidingWindowRateLimiter(settings.rendered_uploads_per_hour, 3600)
     rendered_lock = asyncio.Lock()
@@ -911,11 +983,12 @@ async def create_web_app(
             return web.json_response({"posters": []})
         cached = poster_cache.get(raw_id)
         if cached is not None:
-            return web.json_response({"posters": cached})
-        posters = await collect_posters(session, int(raw_id))
-        if posters:
-            poster_cache.put(raw_id, posters)
-        return web.json_response({"posters": posters})
+            return web.json_response(cached)
+        posters, warnings = await collect_posters(session, int(raw_id))
+        payload = {"posters": posters, "warnings": warnings}
+        if not warnings:
+            poster_cache.put(raw_id, payload)
+        return web.json_response(payload)
 
     async def image_proxy(request: web.Request) -> web.Response:
         url = request.query.get("url") or ""
@@ -1083,7 +1156,7 @@ async def main() -> None:
         timeout=ClientTimeout(total=15),
         connector=TCPConnector(family=socket.AF_INET, ttl_dns_cache=300),
     ) as direct_session:
-        upstream = UpstreamSessions(direct_session)
+        upstream = UpstreamSessions(direct_session, settings.proxy_url)
         bot_session = AiohttpSession(proxy=settings.proxy_url) if settings.proxy_url else None
         bot = Bot(settings.bot_token, session=bot_session)
         dp = Dispatcher()
