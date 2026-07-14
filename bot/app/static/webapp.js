@@ -65,9 +65,6 @@
 
   document.body.classList.toggle('mode-telegram', inTelegram);
   document.body.classList.toggle('mode-browser', !inTelegram);
-  const desktopQuery = window.matchMedia('(min-width: 1025px)');
-  const updateLayout = () => document.body.classList.toggle('layout-desktop', desktopQuery.matches);
-  updateLayout(); desktopQuery.addEventListener?.('change', updateLayout);
 
   tg?.ready();
   tg?.expand();
@@ -301,19 +298,23 @@
     const switches = [['score', T.score], ['genres', T.genres], ['mark', T.mark]].map(([id, label]) => h(Switch, {
       key: id, label, checked: options[id], onCheckedChange: (checked) => setOptions((current) => ({ ...current, [id]: checked })),
     }));
-    return h('main', { className: 'app-shell' }, [
+    return h('main', { className: 'app-shell editor-shell' }, [
       h('header', { className: 'editor-header', key: 'header' }, [
         h(Button, { key: 'back', variant: 'ghost', size: 'md', type: 'button', onClick: onBack, 'aria-label': T.back }, icon('back')),
         h('div', { className: 'editor-title', key: 'title' }, [h(Heading, { as: 'h1', size: 'md', key: 'heading' }, displayTitle), h('p', { key: 'meta' }, metaLine(anime))]),
       ]),
-      h(Card, { className: 'preview-card', variant: 'elevated', key: 'preview' }, h('canvas', { className: 'card-canvas', ref: canvasRef, width: 720, height: 1080 })),
-      h('section', { className: 'editor-section style-section', key: 'style' }, [h('h2', { key: 'heading' }, T.style), h('div', { className: 'preset-carousel', key: 'choices' }, styleChoices)]),
-      h('section', { className: 'editor-section', key: 'poster' }, [h('h2', { key: 'heading' }, T.poster), h('div', { className: 'poster-strip', key: 'choices' }, posterChoices)]),
-      anime.title !== anime.name ? h('section', { className: 'editor-section', key: 'title-language' }, [h('h2', { key: 'heading' }, T.title), h('div', { className: 'history', key: 'choices' }, [['ru', T.titleRu], ['orig', T.titleOrig]].map(([id, label]) => h(Button, { key: id, type: 'button', size: 'sm', variant: titleLanguage === id ? 'primary' : 'outline', onClick: () => setTitleLanguage(id) }, label)))]) : null,
-      h('section', { className: 'editor-section', key: 'elements' }, [h('h2', { key: 'heading' }, T.elements), h('div', { className: 'toggle-list', key: 'switches' }, switches)]),
-      h('div', { className: 'action-stack', key: 'actions' }, inTelegram
-        ? h(Button, { type: 'button', size: 'lg', loading: sending, onClick: share }, sending ? T.uploading : T.share)
-        : h(Button, { type: 'button', size: 'lg', onClick: download }, T.download)),
+      h('div', { className: 'editor-layout', key: 'layout' }, [
+        h(Card, { className: 'preview-card', variant: 'elevated', key: 'preview' }, h('canvas', { className: 'card-canvas', ref: canvasRef, width: 720, height: 1080 })),
+        h('div', { className: 'editor-controls', key: 'controls' }, [
+          h('section', { className: 'editor-section style-section', key: 'style' }, [h('h2', { key: 'heading' }, T.style), h('div', { className: 'preset-carousel', key: 'choices' }, styleChoices)]),
+          h('section', { className: 'editor-section', key: 'poster' }, [h('h2', { key: 'heading' }, T.poster), h('div', { className: 'poster-strip', key: 'choices' }, posterChoices)]),
+          anime.title !== anime.name ? h('section', { className: 'editor-section', key: 'title-language' }, [h('h2', { key: 'heading' }, T.title), h('div', { className: 'history', key: 'choices' }, [['ru', T.titleRu], ['orig', T.titleOrig]].map(([id, label]) => h(Button, { key: id, type: 'button', size: 'sm', variant: titleLanguage === id ? 'primary' : 'outline', onClick: () => setTitleLanguage(id) }, label)))]) : null,
+          h('section', { className: 'editor-section', key: 'elements' }, [h('h2', { key: 'heading' }, T.elements), h('div', { className: 'toggle-list', key: 'switches' }, switches)]),
+        ]),
+        h('div', { className: 'action-stack', key: 'actions' }, inTelegram
+          ? h(Button, { type: 'button', size: 'lg', loading: sending, onClick: share }, sending ? T.uploading : T.share)
+          : h(Button, { type: 'button', size: 'lg', onClick: download }, T.download)),
+      ]),
     ]);
   }
 

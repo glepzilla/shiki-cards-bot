@@ -7,7 +7,7 @@ button, input { font: inherit; }
 .brand-mark { display: grid; place-items: center; flex: 0 0 42px; height: 42px; border-radius: 14px; background: #23361a; color: #f7f7f2; font: 700 17px Lora, Georgia, serif; }
 .header-copy { min-width: 0; flex: 1; }
 .header-copy p { margin: 4px 0 0; color: #65705f; font-size: 13px; }
-.search-panel { margin-bottom: 20px; }
+.search-panel { margin-bottom: 20px; padding: 16px; }
 .search-field { position: relative; }
 .search-field .ds-input, .search-field input { width: 100%; }
 .search-field input { box-sizing: border-box; padding-left: 2.75rem !important; }
@@ -16,10 +16,10 @@ button, input { font: inherit; }
 .search-icon svg { display: block; }
 .clear-search { position: absolute; z-index: 3; right: 8px; top: 50%; transform: translateY(-50%); min-width: 36px; padding: 6px; }
 .section-title { margin: 24px 0 10px; color: #65705f; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
-.result-list { display: grid; gap: 10px; }
-.anime-result { width: 100%; padding: 0; text-align: left; border: 0; background: transparent; cursor: pointer; color: inherit; }
-.anime-result .ds-card { overflow: hidden; transition: transform .15s ease, box-shadow .15s ease; }
-.anime-result:active .ds-card { transform: scale(.985); }
+.result-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.anime-result { width: 100%; min-width: 0; padding: 0; text-align: left; border: 0; background: transparent; cursor: pointer; color: inherit; }
+.anime-result > div { width: 100%; min-width: 0; padding: 0; overflow: hidden; transition: transform .15s ease, box-shadow .15s ease; }
+.anime-result:active > div { transform: scale(.985); }
 .result-content { display: flex; gap: 12px; align-items: center; padding: 12px; }
 .result-poster { width: 58px; height: 78px; flex: 0 0 58px; border-radius: 9px; object-fit: cover; background: #e6e7df; }
 .result-copy { min-width: 0; flex: 1; }
@@ -31,15 +31,17 @@ button, input { font: inherit; }
 .empty-state { text-align: center; padding: 34px 18px; color: #65705f; }
 .empty-state p { margin: 8px 0 0; }
 .loading-row { display: flex; justify-content: center; padding: 32px; }
-.editor-header { display: flex; align-items: center; gap: 12px; margin: 4px 0 18px; }
+.editor-header { display: flex; align-items: center; gap: 12px; margin: 4px 0 16px; }
 .editor-header .ds-button { flex: 0 0 auto; }
 .editor-title { min-width: 0; flex: 1; }
 .editor-title h1 { overflow: hidden; margin: 0; font-size: 21px; text-overflow: ellipsis; white-space: nowrap; }
 .editor-title p { overflow: hidden; margin: 3px 0 0; color: #65705f; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.preview-card { margin-bottom: 16px; padding: 10px; }
+.editor-layout { display: grid; grid-template-areas: "preview" "controls" "actions"; gap: 20px; min-width: 0; }
+.preview-card { grid-area: preview; width: min(100%, 360px); justify-self: center; padding: 8px; }
 .card-canvas { display: block; width: 100%; height: auto; border-radius: 10px; background: #e5e6de; }
-.editor-section { margin-top: 16px; }
-.editor-section > h2 { margin: 0 0 8px; color: #4c5945; font: 700 15px Lora, Georgia, serif; }
+.editor-controls { grid-area: controls; display: grid; gap: 20px; min-width: 0; }
+.editor-section { min-width: 0; }
+.editor-section > h2 { margin: 0 0 10px; color: #4c5945; font: 700 15px Lora, Georgia, serif; }
 .poster-strip, .preset-carousel { display: flex; gap: 8px; overflow-x: auto; padding: 2px 0 6px; scrollbar-width: none; scroll-snap-type: x proximity; }
 .poster-strip::-webkit-scrollbar, .preset-carousel::-webkit-scrollbar { display: none; }
 .poster-choice { position: relative; width: 68px; height: 92px; flex: 0 0 68px; padding: 0; border: 2px solid transparent; border-radius: 9px; overflow: hidden; background: #e6e7df; }
@@ -53,16 +55,19 @@ button, input { font: inherit; }
 .style-dot { display: inline-block; width: 8px; height: 8px; border-radius: 999px; margin-right: 4px; vertical-align: 1px; }
 .toggle-list { display: grid; gap: 1px; padding: 4px 12px; border-radius: 10px; background: #f1f2ec; }
 .toggle-list .ds-switch { padding: 10px 0; }
-.action-stack { display: grid; gap: 10px; margin-top: 20px; }
+.action-stack { grid-area: actions; display: grid; gap: 10px; }
 .action-stack .ds-button { width: 100%; min-height: 48px; }
 .toast { position: fixed; z-index: 10; right: 16px; bottom: calc(18px + env(safe-area-inset-bottom)); max-width: calc(100% - 32px); padding: 11px 14px; border-radius: 9px; background: #23361a; color: #fff; font-size: 13px; box-shadow: 0 10px 25px rgba(35,54,26,.22); }
-@media (min-width: 600px) { .app-shell { padding-left: 24px; padding-right: 24px; } .result-list { grid-template-columns: 1fr 1fr; } }
+@media (min-width: 600px) {
+  .app-shell { padding-left: 24px; padding-right: 24px; }
+  .search-panel { padding: 20px; }
+  .result-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 @media (min-width: 1025px) {
-  body.layout-desktop .app-shell:has(.editor-header) { width: min(100%, 1320px); display: grid; grid-template-columns: minmax(360px, 1fr) minmax(500px, 1.25fr); column-gap: 28px; align-items: start; }
-  body.layout-desktop .editor-header { grid-column: 1 / -1; }
-  body.layout-desktop .preview-card { position: sticky; top: 20px; grid-column: 2; grid-row: 2 / span 6; margin: 0; }
-  body.layout-desktop .editor-section { grid-column: 1; }
-  body.layout-desktop .action-stack { grid-column: 2; align-self: end; margin: 14px 0 0; }
-  body.layout-desktop .preset-carousel { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); overflow: visible; }
-  body.layout-desktop .style-choice { width: auto; flex-basis: auto; }
+  .editor-shell { width: min(100%, 1160px); }
+  .editor-header { margin-bottom: 24px; }
+  .editor-layout { grid-template-columns: minmax(0, 1fr) minmax(340px, 460px); grid-template-areas: "controls preview" "controls actions"; column-gap: 32px; row-gap: 16px; align-items: start; }
+  .preview-card { position: sticky; top: 24px; width: 100%; max-width: none; }
+  .preset-carousel { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); overflow: visible; }
+  .style-choice { width: auto; flex-basis: auto; }
 }
