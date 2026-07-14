@@ -1,9 +1,11 @@
 import asyncio
+import base64
 import hashlib
 import hmac
 import os
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from urllib.parse import urlencode
 
@@ -24,6 +26,7 @@ from app.main import (
     parse_card_query,
     validate_webapp_init_data,
     webapp_url,
+    webapp_user,
 )
 
 
@@ -329,3 +332,71 @@ def test_validate_webapp_init_data_rejects_tampering_and_expiry() -> None:
     assert validate_webapp_init_data(init_data, "test-token", 60)
     assert not validate_webapp_init_data(init_data.replace("query", "other"), "test-token", 60)
     assert not validate_webapp_init_data(signed_init_data("test-token", now - 61), "test-token", 60)
+
+
+def test_webapp_user_extracts_authenticated_user_payload() -> None:
+    init_data = signed_init_data("test-token", int(time.time()))
+    assert webapp_user(init_data) == {"id": 1}
+    assert webapp_user("not valid query data") == {}
+
+
+def test_webapp_upload_prepares_native_share_for_new_and_reused_cards(
+    tmp_path: Path,
+) -> None:
+    class SharingBot:
+        def __init__(self) -> None:
+            self.send_photo_calls = 0
+            self.prepared_results: list[object] = []
+
+        async def send_photo(self, **_: object) -> object:
+            self.send_photo_calls += 1
+            return SimpleNamespace(photo=[SimpleNamespace(file_id="telegram-photo-id")])
+
+        async def save_prepared_inline_message(self, **kwargs: object) -> object:
+            self.prepared_results.append(kwargs)
+            return SimpleNamespace(id=f"prepared-{len(self.prepared_results)}")
+
+    async def check() -> None:
+        settings = make_settings(tmp_path)
+        bot = SharingBot()
+        init_data = signed_init_data("test-token", int(time.time()))
+        headers = {"X-Telegram-Init-Data": init_data}
+        image = base64.b64encode(b"\xff\xd8\xffshikizilla-card").decode()
+        payload = {
+            "image": f"data:image/jpeg;base64,{image}",
+            "meta": {
+                "title": "Test Card",
+                "subtitle": "Test Anime",
+                "url": "https://shikimori.io/animes/1",
+            },
+        }
+
+        async with ClientSession() as direct:
+            app = await create_web_app(
+                settings,
+                UpstreamSessions(direct),
+                TTLCache(ttl=60),
+                bot,  # type: ignore[arg-type]
+            )
+            client = TestClient(TestServer(app))
+            await client.start_server()
+            try:
+                first = await client.post("/api/rendered", headers=headers, json=payload)
+                second = await client.post("/api/rendered", headers=headers, json=payload)
+                first_body = await first.json()
+                second_body = await second.json()
+            finally:
+                await client.close()
+
+        assert first.status == second.status == 200
+        assert first_body["prepared_message_id"] == "prepared-1"
+        assert second_body["prepared_message_id"] == "prepared-2"
+        assert first_body["id"] == second_body["id"]
+        assert bot.send_photo_calls == 1
+        assert len(bot.prepared_results) == 2
+        assert bot.prepared_results[0]["user_id"] == 1
+        result = bot.prepared_results[0]["result"]
+        assert result.photo_file_id == "telegram-photo-id"  # type: ignore[attr-defined]
+        assert result.caption == "<b>Test Card</b>\nTest Anime"  # type: ignore[attr-defined]
+
+    asyncio.run(check())

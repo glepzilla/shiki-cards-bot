@@ -129,14 +129,19 @@ def as_int(value: Any) -> int | None:
 
 def webapp_actor(init_data: str) -> str:
     """Stable rate-limit key without trusting it for authentication."""
+    user_id = as_int(webapp_user(init_data).get("id"))
+    if user_id is not None:
+        return f"user:{user_id}"
+    return f"init:{hashlib.sha256(init_data.encode()).hexdigest()}"
+
+
+def webapp_user(init_data: str) -> dict[str, Any]:
+    """Extract the user payload after initData has been authenticated by the caller."""
     try:
         user = json.loads(dict(parse_qsl(init_data, keep_blank_values=True)).get("user", ""))
-        user_id = as_mapping(user).get("id")
-        if user_id is not None:
-            return f"user:{user_id}"
+        return as_mapping(user)
     except TypeError, ValueError:
-        pass
-    return f"init:{hashlib.sha256(init_data.encode()).hexdigest()}"
+        return {}
 
 
 def validate_webapp_init_data(init_data: str, bot_token: str, max_age: int) -> bool:
@@ -693,6 +698,47 @@ def card_markup(meta: dict[str, Any]) -> InlineKeyboardMarkup | None:
     return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=label, url=url)]])
 
 
+def card_inline_result(
+    card_id: str, meta: dict[str, Any], ru: bool = True
+) -> InlineQueryResultCachedPhoto:
+    return InlineQueryResultCachedPhoto(
+        id=f"card-{card_id}",
+        photo_file_id=str(meta["file_id"]),
+        title=str(meta.get("title") or "Shikizilla Card"),
+        description="Готовая карточка из WebApp" if ru else "Card from the WebApp",
+        caption=card_caption(meta),
+        parse_mode="HTML",
+        reply_markup=card_markup(meta),
+    )
+
+
+async def prepare_card_share(
+    bot: Bot, init_data: str, card_id: str, meta: dict[str, Any]
+) -> str | None:
+    """Create a short-lived message for Telegram's native Mini App share dialog."""
+    user = webapp_user(init_data)
+    user_id = as_int(user.get("id"))
+    if user_id is None or not as_text(meta.get("file_id")):
+        return None
+    try:
+        prepared = await bot.save_prepared_inline_message(
+            user_id=user_id,
+            result=card_inline_result(
+                card_id, meta, is_russian(as_text(user.get("language_code")))
+            ),
+            allow_user_chats=True,
+            allow_bot_chats=False,
+            allow_group_chats=True,
+            allow_channel_chats=True,
+        )
+        return as_text(prepared.id)
+    except Exception:
+        # Older Bot API gateways can lack prepared messages. The response still
+        # carries the legacy inline query so the client has a usable fallback.
+        logging.exception("Failed to prepare native share for card %s", card_id)
+        return None
+
+
 def anime_markup(anime: Anime) -> InlineKeyboardMarkup:
     label = "Открыть на MyAnimeList" if anime.source == "mal" else "Открыть на Shikimori"
     return InlineKeyboardMarkup(
@@ -886,17 +932,7 @@ def build_router(
                 await answer([], cache_time=1)
                 return
             await answer(
-                [
-                    InlineQueryResultCachedPhoto(
-                        id=f"card-{card_id}",
-                        photo_file_id=file_id,
-                        title=str(meta.get("title") or "Shikizilla Card"),
-                        description="Готовая карточка из WebApp" if ru else "Card from the WebApp",
-                        caption=card_caption(meta),
-                        parse_mode="HTML",
-                        reply_markup=card_markup(meta),
-                    )
-                ],
+                [card_inline_result(card_id, meta, ru)],
                 cache_time=86_400,
             )
             return
@@ -1078,47 +1114,61 @@ async def create_web_app(
                 logging.info(
                     "Reused rendered card %s for image hash %s", existing_card_id, image_hash
                 )
-                return web.json_response(
-                    {"ok": True, "id": existing_card_id, "query": f"card:{existing_card_id}"}
+                card_id = existing_card_id
+                meta = load_card_meta(settings, card_id)
+            else:
+                meta_raw = as_mapping(payload.get("meta"))
+                url = str(meta_raw.get("url") or "")
+                meta = {
+                    "title": str(meta_raw.get("title") or "")[:200],
+                    "subtitle": str(meta_raw.get("subtitle") or "")[:200],
+                    "url": url if allowed_link(url) else "",
+                    "image_sha256": image_hash,
+                }
+                card_id = uuid4().hex
+                try:
+                    message = await bot.send_photo(
+                        chat_id=settings.storage_chat_id,
+                        photo=BufferedInputFile(raw, filename=f"shikizilla-{card_id}.jpg"),
+                    )
+                    if not message.photo:
+                        raise RuntimeError("Telegram did not return a photo file_id")
+                    meta["file_id"] = message.photo[-1].file_id
+                except Exception:
+                    logging.exception(
+                        "Failed to upload rendered card %s to Telegram storage", card_id
+                    )
+                    return web.json_response(
+                        {"ok": False, "error": "Telegram upload failed"}, status=502
+                    )
+
+                try:
+                    image_path = settings.rendered_dir / f"{card_id}.jpg"
+                    image_path.write_bytes(raw)
+                    (settings.rendered_dir / f"{card_id}.json").write_text(
+                        json.dumps(meta, ensure_ascii=False)
+                    )
+                    index[image_hash] = card_id
+                    save_rendered_index(settings, index)
+                except OSError:
+                    logging.exception("Failed to persist rendered card %s", card_id)
+                    return web.json_response(
+                        {"ok": False, "error": "card storage failed"}, status=500
+                    )
+                cleanup_rendered_dir(settings)
+                logging.info(
+                    "Saved rendered card %s (%d bytes) to Telegram storage", card_id, len(raw)
                 )
 
-            meta_raw = as_mapping(payload.get("meta"))
-            url = str(meta_raw.get("url") or "")
-            meta = {
-                "title": str(meta_raw.get("title") or "")[:200],
-                "subtitle": str(meta_raw.get("subtitle") or "")[:200],
-                "url": url if allowed_link(url) else "",
-                "image_sha256": image_hash,
+        prepared_message_id = await prepare_card_share(bot, init_data, card_id, meta)
+        return web.json_response(
+            {
+                "ok": True,
+                "id": card_id,
+                "query": f"card:{card_id}",
+                "prepared_message_id": prepared_message_id,
             }
-            card_id = uuid4().hex
-            try:
-                message = await bot.send_photo(
-                    chat_id=settings.storage_chat_id,
-                    photo=BufferedInputFile(raw, filename=f"shikizilla-{card_id}.jpg"),
-                )
-                if not message.photo:
-                    raise RuntimeError("Telegram did not return a photo file_id")
-                meta["file_id"] = message.photo[-1].file_id
-            except Exception:
-                logging.exception("Failed to upload rendered card %s to Telegram storage", card_id)
-                return web.json_response(
-                    {"ok": False, "error": "Telegram upload failed"}, status=502
-                )
-
-            try:
-                image_path = settings.rendered_dir / f"{card_id}.jpg"
-                image_path.write_bytes(raw)
-                (settings.rendered_dir / f"{card_id}.json").write_text(
-                    json.dumps(meta, ensure_ascii=False)
-                )
-                index[image_hash] = card_id
-                save_rendered_index(settings, index)
-            except OSError:
-                logging.exception("Failed to persist rendered card %s", card_id)
-                return web.json_response({"ok": False, "error": "card storage failed"}, status=500)
-            cleanup_rendered_dir(settings)
-            logging.info("Saved rendered card %s (%d bytes) to Telegram storage", card_id, len(raw))
-            return web.json_response({"ok": True, "id": card_id, "query": f"card:{card_id}"})
+        )
 
     async def rendered_jpeg(request: web.Request) -> web.StreamResponse:
         card_id = request.match_info["card_id"]

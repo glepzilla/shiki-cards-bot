@@ -295,8 +295,15 @@
         const response = await apiFetch('/api/rendered', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: canvasRef.current.toDataURL('image/jpeg', .88), meta: { title: displayTitle, subtitle: anime.name, url: anime.page_url } }) });
         const data = await response.json(); if (!data.ok) throw new Error(data.error || 'upload failed');
         tg?.HapticFeedback?.notificationOccurred?.('success');
-        if (inTelegram && tg?.switchInlineQuery) tg.switchInlineQuery(data.query, ['users', 'groups', 'channels']);
-        else { await navigator.clipboard?.writeText(data.query); notify(`${T.copied}${data.query}`); }
+        const canSharePrepared = data.prepared_message_id && typeof tg?.shareMessage === 'function'
+          && (typeof tg?.isVersionAtLeast !== 'function' || tg.isVersionAtLeast('8.0'));
+        if (inTelegram && canSharePrepared) {
+          tg.shareMessage(data.prepared_message_id);
+        } else if (inTelegram && typeof tg?.switchInlineQuery === 'function') {
+          tg.switchInlineQuery(data.query, ['users', 'groups', 'channels']);
+        } else {
+          await navigator.clipboard?.writeText(data.query); notify(`${T.copied}${data.query}`);
+        }
       } catch (_) { tg?.HapticFeedback?.notificationOccurred?.('error'); notify(T.shareError); }
       finally { tg?.MainButton?.hideProgress?.(); setSending(false); }
     };
