@@ -11,6 +11,7 @@ import os
 import socket
 import time
 from dataclasses import dataclass, replace
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlparse
@@ -441,6 +442,51 @@ async def fetch_jikan_pictures(session: UpstreamSessions, mal_id: int) -> list[t
     return pairs
 
 
+class OpenGraphImageParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.image_url: str | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag != "meta" or self.image_url:
+            return
+        values = dict(attrs)
+        if values.get("property") == "og:image" or values.get("name") == "og:image":
+            self.image_url = as_text(values.get("content"))
+
+
+async def fetch_mal_poster(session: UpstreamSessions, mal_id: int) -> list[tuple[str, str]]:
+    """Read MAL's public OpenGraph image when Jikan is unreachable."""
+    url = f"{MAL_ORIGIN}/anime/{mal_id}"
+    proxies: list[str | None] = [None]
+    if session.proxy_url:
+        proxies.append(session.proxy_url)
+    last_error: Exception | None = None
+    for proxy in proxies:
+        try:
+            async with session.get(
+                url,
+                proxy=proxy,
+                headers={"User-Agent": USER_AGENT},
+                timeout=ClientTimeout(total=UPSTREAM_REQUEST_TIMEOUT),
+            ) as resp:
+                resp.raise_for_status()
+                raw = await resp.content.read(1_048_577)
+                if len(raw) > 1_048_576:
+                    raise ValueError("MAL page is too large")
+            parser = OpenGraphImageParser()
+            parser.feed(raw.decode("utf-8", errors="replace"))
+            image_url = parser.image_url
+            if image_url and allowed_image(image_url):
+                return [(image_url, image_url)]
+            raise ValueError("MAL page has no allowed OpenGraph image")
+        except Exception as exc:
+            last_error = exc
+    if last_error:
+        raise last_error
+    return []
+
+
 async def fetch_shikimori_poster(
     session: UpstreamSessions, mal_id: int
 ) -> list[tuple[str, str]]:
@@ -534,7 +580,7 @@ def allowed_image(url: str) -> bool:
 
 
 async def collect_posters(session: UpstreamSessions, mal_id: int) -> list[dict[str, str]]:
-    """Alternative posters from AniList, Shikimori and Jikan."""
+    """Alternative posters from AniList, Shikimori, Jikan and MAL."""
     results = await asyncio.gather(
         fetch_anilist_cover(session, mal_id),
         fetch_shikimori_poster(session, mal_id),
@@ -546,7 +592,17 @@ async def collect_posters(session: UpstreamSessions, mal_id: int) -> list[dict[s
     for source, result in zip(("anilist", "shikimori", "jikan"), results, strict=True):
         if isinstance(result, BaseException):
             logging.warning("poster fetch (%s) failed for %s: %s", source, mal_id, result)
-            continue
+            if source == "jikan":
+                try:
+                    result = await asyncio.wait_for(
+                        fetch_mal_poster(session, mal_id), timeout=POSTER_FETCH_TIMEOUT
+                    )
+                    source = "mal"
+                except Exception as exc:
+                    logging.warning("poster fetch (mal) failed for %s: %s", mal_id, exc)
+                    continue
+            else:
+                continue
         for url, thumb in result:
             if not allowed_image(url) or url in seen:
                 continue

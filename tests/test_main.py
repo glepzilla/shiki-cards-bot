@@ -134,11 +134,28 @@ def test_collect_posters_keeps_source_artwork_when_jikan_is_unavailable() -> Non
                 AsyncMock(return_value=[(shikimori, shikimori)]),
             ),
             patch("app.main.fetch_jikan_pictures", AsyncMock(side_effect=TimeoutError)),
+            patch("app.main.fetch_mal_poster", AsyncMock(return_value=[])),
         ):
             posters = await collect_posters(object(), 17)  # type: ignore[arg-type]
 
         assert [poster["source"] for poster in posters] == ["anilist", "shikimori"]
         assert [poster["url"] for poster in posters] == [anilist, shikimori]
+
+    asyncio.run(check())
+
+
+def test_collect_posters_uses_mal_when_jikan_is_unavailable() -> None:
+    async def check() -> None:
+        mal = "https://cdn.myanimelist.net/images/anime/1/2.jpg"
+        with (
+            patch("app.main.fetch_anilist_cover", AsyncMock(return_value=[])),
+            patch("app.main.fetch_shikimori_poster", AsyncMock(return_value=[])),
+            patch("app.main.fetch_jikan_pictures", AsyncMock(side_effect=TimeoutError)),
+            patch("app.main.fetch_mal_poster", AsyncMock(return_value=[(mal, mal)])),
+        ):
+            posters = await collect_posters(object(), 17)  # type: ignore[arg-type]
+
+        assert posters == [{"url": mal, "thumb": mal, "source": "mal"}]
 
     asyncio.run(check())
 
