@@ -19,6 +19,7 @@ from app.main import (
     create_web_app,
     parse_card_query,
     validate_webapp_init_data,
+    webapp_url,
 )
 
 
@@ -45,6 +46,14 @@ def test_parse_card_query() -> None:
     assert parse_card_query("card:") is None
     assert parse_card_query("card:../../secret") is None
     assert parse_card_query("anime") is None
+
+
+def test_webapp_url_uses_the_site_root() -> None:
+    settings = make_settings(Path(".cache/rendered"))
+    assert webapp_url(settings) == "https://example.test/"
+    assert webapp_url(settings, "Fullmetal Alchemist") == (
+        "https://example.test/?q=Fullmetal+Alchemist"
+    )
 
 
 def test_anime_from_shikimori_handles_dirty_optional_fields() -> None:
@@ -189,9 +198,10 @@ def test_webapp_rejects_unauthenticated_requests_and_upload_failures(tmp_path: P
                 assert (await client.get("/static/ds/styles.css")).status == 200
                 assert (await client.get("/static/webapp.css")).status == 200
                 assert (await client.get("/static/webapp.js")).status == 200
-                webapp = await client.get("/webapp")
+                webapp = await client.get("/")
                 assert webapp.status == 200
                 assert "/static/ds/_ds_bundle.js" in await webapp.text()
+                assert (await client.get("/webapp")).status == 404
                 assert (await client.get("/rendered/card.json")).status == 404
 
                 assert (await client.post("/api/rendered")).status == 401

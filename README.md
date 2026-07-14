@@ -13,7 +13,9 @@ uv sync --all-groups
 PYTHONPATH=bot uv run python -m app.main
 ```
 
-`PUBLIC_BASE_URL` должен быть публичным HTTPS-адресом: Telegram открывает по нему WebApp. Для локальной разработки используйте туннель, например ngrok или Cloudflare Tunnel.
+`PUBLIC_BASE_URL` должен быть публичным HTTPS-адресом без дополнительного пути:
+Telegram открывает WebApp в корне этого домена. Для локальной разработки используйте
+туннель, например ngrok или Cloudflare Tunnel.
 
 ### Docker
 

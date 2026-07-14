@@ -306,7 +306,7 @@
         h(Button, { key: 'back', variant: 'ghost', size: 'md', type: 'button', onClick: onBack, 'aria-label': T.back }, icon('back')),
         h('div', { className: 'editor-title', key: 'title' }, [h(Heading, { as: 'h1', size: 'md', key: 'heading' }, displayTitle), h('p', { key: 'meta' }, metaLine(anime))]),
       ]),
-      h(Card, { className: 'preview-card', variant: 'elevated', key: 'preview' }, h('button', { className: 'canvas-button', type: 'button', onClick: () => { const link = document.createElement('a'); link.href = canvasRef.current.toDataURL('image/jpeg', .92); link.target = '_blank'; link.click(); }, 'aria-label': 'Open card image' }, h('canvas', { ref: canvasRef, width: 720, height: 1080 }))),
+      h(Card, { className: 'preview-card', variant: 'elevated', key: 'preview' }, h('canvas', { className: 'card-canvas', ref: canvasRef, width: 720, height: 1080 })),
       h('section', { className: 'editor-section style-section', key: 'style' }, [h('h2', { key: 'heading' }, T.style), h('div', { className: 'preset-carousel', key: 'choices' }, styleChoices)]),
       h('section', { className: 'editor-section', key: 'poster' }, [h('h2', { key: 'heading' }, T.poster), h('div', { className: 'poster-strip', key: 'choices' }, posterChoices)]),
       anime.title !== anime.name ? h('section', { className: 'editor-section', key: 'title-language' }, [h('h2', { key: 'heading' }, T.title), h('div', { className: 'history', key: 'choices' }, [['ru', T.titleRu], ['orig', T.titleOrig]].map(([id, label]) => h(Button, { key: id, type: 'button', size: 'sm', variant: titleLanguage === id ? 'primary' : 'outline', onClick: () => setTitleLanguage(id) }, label)))]) : null,

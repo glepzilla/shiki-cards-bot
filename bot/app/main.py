@@ -620,7 +620,7 @@ def webapp_url(settings: Settings, query_text: str = "") -> str:
     if query_text and not parse_card_query(query_text):
         params["q"] = query_text
     query = f"?{urlencode(params)}" if params else ""
-    return f"{settings.public_base_url.rstrip('/')}/webapp{query}"
+    return f"{settings.public_base_url.rstrip('/')}/{query}"
 
 
 def results_button(
@@ -985,7 +985,7 @@ async def create_web_app(
         )
 
     app.router.add_get("/healthz", healthz)
-    app.router.add_get("/webapp", webapp_page)
+    app.router.add_get("/", webapp_page)
     app.router.add_static("/static/", static_dir, name="static")
     app.router.add_get("/api/search", search_api)
     app.router.add_get("/api/trending", trending_api)

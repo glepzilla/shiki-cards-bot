@@ -37,8 +37,7 @@ button, input { font: inherit; }
 .editor-title h1 { overflow: hidden; margin: 0; font-size: 21px; text-overflow: ellipsis; white-space: nowrap; }
 .editor-title p { overflow: hidden; margin: 3px 0 0; color: #65705f; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .preview-card { margin-bottom: 16px; padding: 10px; }
-.canvas-button { display: block; width: 100%; padding: 0; border: 0; border-radius: 10px; overflow: hidden; background: #e5e6de; cursor: zoom-in; }
-.canvas-button canvas { display: block; width: 100%; height: auto; }
+.card-canvas { display: block; width: 100%; height: auto; border-radius: 10px; background: #e5e6de; }
 .editor-section { margin-top: 16px; }
 .editor-section > h2 { margin: 0 0 8px; color: #4c5945; font: 700 15px Lora, Georgia, serif; }
 .poster-strip, .preset-carousel { display: flex; gap: 8px; overflow-x: auto; padding: 2px 0 6px; scrollbar-width: none; scroll-snap-type: x proximity; }
@@ -66,5 +65,4 @@ button, input { font: inherit; }
   body.layout-desktop .action-stack { grid-column: 2; align-self: end; margin: 14px 0 0; }
   body.layout-desktop .preset-carousel { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); overflow: visible; }
   body.layout-desktop .style-choice { width: auto; flex-basis: auto; }
-  body.layout-desktop .canvas-button { cursor: default; }
 }
