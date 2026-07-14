@@ -9,16 +9,14 @@ services:
     restart: "no"
 
   bot:
-    image: ghcr.io/glepzilla/shiki-cards-bot:latest    # ← неймспейс орги!
+    image: ghcr.io/glepzilla/shiki-cards-bot:latest
     restart: unless-stopped
     depends_on:
       rendered-permissions:
         condition: service_completed_successfully
     env_file: .env
     environment:
-      # The proxy runs on the Docker host. It must listen on the Docker bridge,
-      # not only on the host's loopback address (see README).
-      # Application code uses it for Telegram, Jikan and the AniList image CDN.
+      # The proxy runs on the Docker host and listens on the Docker bridge.
       PROXY_URL: http://host.docker.internal:7890
     extra_hosts:
       - host.docker.internal:host-gateway

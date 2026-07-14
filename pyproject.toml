@@ -1,7 +1,7 @@
 [project]
-name = "shiki-cards-bot"
-version = "0.1.0"
-description = "Telegram inline bot for sharing anime cards from Shikimori"
+name = "shikizilla"
+version = "0.2.0"
+description = "Telegram WebApp for creating and sharing anime cards"
 requires-python = ">=3.14"
 dependencies = [
   "aiogram>=3.20.0",

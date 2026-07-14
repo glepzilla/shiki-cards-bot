@@ -50,7 +50,7 @@ SHIKIMORI_ORIGIN = "https://shikimori.io"
 MAL_ORIGIN = "https://myanimelist.net"
 JIKAN_API = "https://api.jikan.moe/v4"
 ANILIST_API = "https://graphql.anilist.co"
-USER_AGENT = "shiki-cards-bot/0.2"
+USER_AGENT = "shikizilla/0.2"
 UPSTREAM_REQUEST_TIMEOUT = 4.0
 INLINE_SEARCH_TIMEOUT = 8.0
 # Jikan is reached through the explicit proxy. Fetch its stable primary image

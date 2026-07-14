@@ -1,46 +1,75 @@
-# Shikizilla
+<p align="center">
+  <img src="bot/app/static/shikizilla-logo.png" width="220" alt="Логотип Shikizilla" />
+</p>
 
-Telegram inline-бот и WebApp для поиска аниме на Shikimori и создания карточек для отправки в чаты.
+<h1 align="center">Shikizilla</h1>
+
+<p align="center">
+  Конструктор аниме-карточек для браузера и Telegram.
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Telegram-WebApp-26A5E4?logo=telegram&logoColor=white" alt="Telegram WebApp" />
+  <img src="https://img.shields.io/badge/Python-3.14-3776AB?logo=python&logoColor=white" alt="Python 3.14" />
+  <a href="https://github.com/glepzilla/shiki-cards-bot/actions/workflows/deploy.yml"><img src="https://github.com/glepzilla/shiki-cards-bot/actions/workflows/deploy.yml/badge.svg" alt="Deploy" /></a>
+</p>
+
+<p align="center">
+  <a href="https://shiki.glepzilla.ru">Открыть Shikizilla</a>
+</p>
+
+Shikizilla помогает найти аниме, выбрать постер и собрать готовую карточку. В обычном
+браузере её можно скачать в JPEG, а внутри Telegram — сразу отправить в чат.
+
+## Возможности
+
+- поиск аниме и актуальная подборка на главном экране;
+- несколько источников и вариантов постеров;
+- девять стилей карточек;
+- настройка названия, оценки, жанров и подписи;
+- скачивание в браузере и отправка через Telegram.
 
 ## Локальный запуск
 
-Требуются Python 3.14 и [uv](https://docs.astral.sh/uv/).
+Понадобятся [Python 3.14](https://www.python.org/) и
+[uv](https://docs.astral.sh/uv/).
 
 ```bash
+git clone https://github.com/glepzilla/shiki-cards-bot.git
+cd shiki-cards-bot
 cp .env.example .env
-# Заполните BOT_TOKEN, PUBLIC_BASE_URL и STORAGE_CHAT_ID
 uv sync --all-groups
+```
+
+Заполните три значения в `.env`:
+
+| Переменная | Что указать |
+| --- | --- |
+| `BOT_TOKEN` | Токен бота от [@BotFather](https://t.me/BotFather) |
+| `PUBLIC_BASE_URL` | Публичный HTTPS-адрес без дополнительного пути |
+| `STORAGE_CHAT_ID` | ID закрытого канала, куда бот может отправлять изображения |
+
+Для Telegram понадобится HTTPS-туннель до локального порта `8080`, например ngrok или
+Cloudflare Tunnel. После этого запустите приложение:
+
+```bash
 PYTHONPATH=bot uv run python -m app.main
 ```
 
-`PUBLIC_BASE_URL` должен быть публичным HTTPS-адресом без дополнительного пути:
-Telegram открывает WebApp в корне этого домена. Для локальной разработки используйте
-туннель, например ngrok или Cloudflare Tunnel.
+В браузере Shikizilla будет доступна по адресу <http://localhost:8080>.
 
-### Docker
+### Через Docker
+
+После заполнения `.env`:
 
 ```bash
-cp .env.example .env
-# Заполните BOT_TOKEN, PUBLIC_BASE_URL и STORAGE_CHAT_ID
 docker compose -f compose.dev.yml up --build
 ```
 
-## Продакшен: сеть и исходящий proxy
-
-В Cloudflare для домена приложения используйте **DNS only** (серое облако), а TLS
-терминируйте на origin через Traefik/Let's Encrypt. После переключения проверьте
-`https://<домен>/healthz` из обычного браузера и из Telegram.
-
-Shikimori (`shikimori.io`), AniList API и CDN MAL вызываются напрямую.
-`PROXY_URL` применяется к Telegram Bot API, Jikan (`api.jikan.moe`) и
-`s4.anilist.co`: прямой маршрут VPS к этим сервисам нестабилен. Не задавайте
-`HTTP_PROXY` или `HTTPS_PROXY` контейнеру: прокси применяется явно только в коде.
-На Docker-хосте Clash/Mihomo должен слушать bridge-доступный
-`host.docker.internal:7890`.
-
-После деплоя проверьте health endpoint и Telegram Bot API через прокси:
+## Проверка изменений
 
 ```bash
-curl --fail https://<домен>/healthz
-# Бот должен отвечать на /start; это также подтверждает getMe/polling через PROXY_URL.
+uv run ruff check bot tests
+uv run mypy
+PYTHONPATH=bot uv run pytest
 ```
