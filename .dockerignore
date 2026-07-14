@@ -21,6 +21,7 @@ htmlcov/
 build/
 dist/
 *.egg-info/
+.agents/
 .claude/
 .pi-subagents/
 .DS_Store

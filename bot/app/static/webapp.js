@@ -311,7 +311,9 @@
       h('section', { className: 'editor-section', key: 'poster' }, [h('h2', { key: 'heading' }, T.poster), h('div', { className: 'poster-strip', key: 'choices' }, posterChoices)]),
       anime.title !== anime.name ? h('section', { className: 'editor-section', key: 'title-language' }, [h('h2', { key: 'heading' }, T.title), h('div', { className: 'history', key: 'choices' }, [['ru', T.titleRu], ['orig', T.titleOrig]].map(([id, label]) => h(Button, { key: id, type: 'button', size: 'sm', variant: titleLanguage === id ? 'primary' : 'outline', onClick: () => setTitleLanguage(id) }, label)))]) : null,
       h('section', { className: 'editor-section', key: 'elements' }, [h('h2', { key: 'heading' }, T.elements), h('div', { className: 'toggle-list', key: 'switches' }, switches)]),
-      h('div', { className: 'action-stack', key: 'actions' }, [h(Button, { key: 'share', type: 'button', size: 'lg', loading: sending, onClick: share }, sending ? T.uploading : T.share), !inTelegram && h(Button, { key: 'download', type: 'button', size: 'lg', variant: 'outline', onClick: download }, T.download)]),
+      h('div', { className: 'action-stack', key: 'actions' }, inTelegram
+        ? h(Button, { type: 'button', size: 'lg', loading: sending, onClick: share }, sending ? T.uploading : T.share)
+        : h(Button, { type: 'button', size: 'lg', onClick: download }, T.download)),
     ]);
   }
 

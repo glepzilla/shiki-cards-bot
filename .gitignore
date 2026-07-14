@@ -21,6 +21,7 @@ dist/
 *.egg-info/
 
 # Local agent/editor state
+.agents/
 .claude/
 .pi-subagents/
 .DS_Store
