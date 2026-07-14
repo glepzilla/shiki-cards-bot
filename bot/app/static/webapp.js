@@ -5,9 +5,14 @@
   const hasTelegramAuth = Boolean(tg?.initData);
   const telegramPlatform = String(tg?.platform || 'unknown').toLowerCase();
   const inTelegram = hasTelegramAuth || telegramPlatform !== 'unknown';
+  const inlineSession = new URLSearchParams(window.location.search).get('inline_session') || '';
+  const inlineLaunch = Boolean(inlineSession);
   const assetVersion = document.documentElement.dataset.assetVersion || '';
   const logoUrl = `/static/shikizilla-logo.png${assetVersion ? `?v=${encodeURIComponent(assetVersion)}` : ''}`;
-  const apiHeaders = hasTelegramAuth ? { 'X-Telegram-Init-Data': tg.initData } : {};
+  const apiHeaders = {
+    ...(hasTelegramAuth ? { 'X-Telegram-Init-Data': tg.initData } : {}),
+    ...(inlineLaunch ? { 'X-Inline-Session': inlineSession } : {}),
+  };
   const apiFetch = (url, options = {}) => fetch(url, {
     ...options,
     headers: { ...apiHeaders, ...(options.headers || {}) },
@@ -22,7 +27,7 @@
     titleRu: 'Русское', titleOrig: 'Оригинал', score: 'Оценка', genres: 'Жанры', mark: 'Подпись',
     share: 'Отправить карточку', download: 'Скачать JPEG', uploading: 'Загружаем…',
     empty: 'Введите хотя бы две буквы, чтобы найти аниме.', posterError: 'Не удалось загрузить постер.',
-    shareError: 'Не получилось отправить карточку. Попробуйте ещё раз.', copied: 'Скопировано: ',
+    shareError: 'Не получилось отправить карточку. Попробуйте ещё раз.', copied: 'Скопировано: ', inlineCopied: 'ID карточки скопирован: ',
     eps: 'эп.', ongoing: 'онгоинг', anons: 'анонс', exclusive: 'ЭКСКЛЮЗИВ', loadingPosters: 'Загружаем варианты…',
     presets: { classic: 'Классика', aurora: 'Аврора', glass: 'Стекло', neon: 'Неон', vhs: 'VHS', manga: 'Манга', mag: 'Журнал', polaroid: 'Полароид', print: 'Принт' },
   } : {
@@ -33,7 +38,7 @@
     titleRu: 'Russian', titleOrig: 'Original', score: 'Score', genres: 'Genres', mark: 'Watermark',
     share: 'Share card', download: 'Download JPEG', uploading: 'Uploading…',
     empty: 'Enter at least two characters to search for anime.', posterError: 'Could not load poster.',
-    shareError: 'Could not send the card. Please try again.', copied: 'Copied: ',
+    shareError: 'Could not send the card. Please try again.', copied: 'Copied: ', inlineCopied: 'Card ID copied: ',
     eps: 'ep.', ongoing: 'airing', anons: 'soon', exclusive: 'EXCLUSIVE', loadingPosters: 'Loading options…',
     presets: { classic: 'Classic', aurora: 'Aurora', glass: 'Glass', neon: 'Neon', vhs: 'VHS', manga: 'Manga', mag: 'Magazine', polaroid: 'Polaroid', print: 'Print' },
   };
@@ -88,6 +93,18 @@
   function storeHistory(query) {
     if (query.length < 2) return;
     try { localStorage.setItem(HISTORY_KEY, JSON.stringify([query, ...readHistory().filter((item) => item.toLowerCase() !== query.toLowerCase())].slice(0, 6))); } catch (_) { /* storage is optional */ }
+  }
+  async function copyText(value) {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value); return true;
+      }
+    } catch (_) { /* fall through to the compatibility copy path */ }
+    const field = document.createElement('textarea');
+    field.value = value; field.setAttribute('readonly', ''); field.style.position = 'fixed'; field.style.opacity = '0';
+    document.body.appendChild(field); field.focus(); field.select(); field.setSelectionRange(0, value.length);
+    try { return document.execCommand('copy'); } catch (_) { return false; }
+    finally { field.remove(); }
   }
   function icon(kind) {
     if (kind === 'search') return h('svg', { width: 17, height: 17, viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': true }, h('circle', { cx: 11, cy: 11, r: 6, stroke: 'currentColor', strokeWidth: 2 }), h('path', { d: 'm16 16 4 4', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' }));
@@ -295,14 +312,21 @@
         const response = await apiFetch('/api/rendered', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: canvasRef.current.toDataURL('image/jpeg', .88), meta: { title: displayTitle, subtitle: anime.name, url: anime.page_url } }) });
         const data = await response.json(); if (!data.ok) throw new Error(data.error || 'upload failed');
         tg?.HapticFeedback?.notificationOccurred?.('success');
+        if (inlineLaunch) {
+          const copied = await copyText(data.query);
+          if (copied) notify(`${T.inlineCopied}${data.query}`);
+          if (typeof tg?.switchInlineQuery === 'function') tg.switchInlineQuery(data.query);
+          else if (!copied) throw new Error('inline handoff unavailable');
+          return;
+        }
         const canSharePrepared = data.prepared_message_id && typeof tg?.shareMessage === 'function'
           && (typeof tg?.isVersionAtLeast !== 'function' || tg.isVersionAtLeast('8.0'));
         if (inTelegram && canSharePrepared) {
           tg.shareMessage(data.prepared_message_id);
         } else if (inTelegram && typeof tg?.switchInlineQuery === 'function') {
-          tg.switchInlineQuery(data.query, ['users', 'groups', 'channels']);
+          tg.switchInlineQuery(data.query);
         } else {
-          await navigator.clipboard?.writeText(data.query); notify(`${T.copied}${data.query}`);
+          await copyText(data.query); notify(`${T.copied}${data.query}`);
         }
       } catch (_) { tg?.HapticFeedback?.notificationOccurred?.('error'); notify(T.shareError); }
       finally { tg?.MainButton?.hideProgress?.(); setSending(false); }

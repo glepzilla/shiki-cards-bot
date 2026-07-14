@@ -21,9 +21,11 @@ from app.main import (
     apply_anilist_covers,
     cleanup_rendered_dir,
     collect_posters,
+    create_inline_session,
     create_web_app,
     fetch_jikan_pictures,
     parse_card_query,
+    validate_inline_session,
     validate_webapp_init_data,
     webapp_url,
     webapp_user,
@@ -61,6 +63,17 @@ def test_webapp_url_uses_the_site_root() -> None:
     assert webapp_url(settings, "Fullmetal Alchemist") == (
         f"https://example.test/?v={WEBAPP_ASSET_VERSION}&q=Fullmetal+Alchemist"
     )
+    inline_url = webapp_url(settings, inline_user_id=42)
+    inline_session = inline_url.split("inline_session=", 1)[1]
+    assert validate_inline_session(inline_session, "test-token", 60) == 42
+
+
+def test_inline_session_rejects_tampering_and_expiry() -> None:
+    token = create_inline_session("test-token", 42, issued_at=1_000)
+    assert validate_inline_session(token, "test-token", 60, now=1_060) == 42
+    assert validate_inline_session(token, "wrong-token", 60, now=1_060) is None
+    assert validate_inline_session(f"43{token[2:]}", "test-token", 60, now=1_060) is None
+    assert validate_inline_session(token, "test-token", 60, now=1_061) is None
 
 
 def test_anime_from_shikimori_handles_dirty_optional_fields() -> None:
@@ -383,15 +396,24 @@ def test_webapp_upload_prepares_native_share_for_new_and_reused_cards(
             try:
                 first = await client.post("/api/rendered", headers=headers, json=payload)
                 second = await client.post("/api/rendered", headers=headers, json=payload)
+                inline = await client.post(
+                    "/api/rendered",
+                    headers={
+                        "X-Inline-Session": create_inline_session("test-token", 1)
+                    },
+                    json=payload,
+                )
                 first_body = await first.json()
                 second_body = await second.json()
+                inline_body = await inline.json()
             finally:
                 await client.close()
 
-        assert first.status == second.status == 200
+        assert first.status == second.status == inline.status == 200
         assert first_body["prepared_message_id"] == "prepared-1"
         assert second_body["prepared_message_id"] == "prepared-2"
-        assert first_body["id"] == second_body["id"]
+        assert inline_body["prepared_message_id"] is None
+        assert first_body["id"] == second_body["id"] == inline_body["id"]
         assert bot.send_photo_calls == 1
         assert len(bot.prepared_results) == 2
         assert bot.prepared_results[0]["user_id"] == 1

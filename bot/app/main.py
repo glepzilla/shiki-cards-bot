@@ -162,6 +162,40 @@ def validate_webapp_init_data(init_data: str, bot_token: str, max_age: int) -> b
     return hmac.compare_digest(expected_hash, received_hash)
 
 
+def create_inline_session(bot_token: str, user_id: int, issued_at: int | None = None) -> str:
+    """Sign an inline Mini App launch, which does not receive Telegram initData."""
+    timestamp = int(time.time()) if issued_at is None else issued_at
+    payload = f"{user_id}.{timestamp}"
+    signature = hmac.new(
+        bot_token.encode(), f"InlineWebApp\n{payload}".encode(), hashlib.sha256
+    ).hexdigest()
+    return f"{payload}.{signature}"
+
+
+def validate_inline_session(
+    token: str, bot_token: str, max_age: int, now: int | None = None
+) -> int | None:
+    """Return the signed Telegram user id when an inline launch token is valid."""
+    try:
+        raw_user_id, raw_timestamp, received_signature = token.split(".", 2)
+        user_id = int(raw_user_id)
+        timestamp = int(raw_timestamp)
+    except ValueError:
+        return None
+    if user_id <= 0:
+        return None
+    current_time = int(time.time()) if now is None else now
+    if timestamp > current_time + 300 or current_time - timestamp > max_age:
+        return None
+    payload = f"{user_id}.{timestamp}"
+    expected_signature = hmac.new(
+        bot_token.encode(), f"InlineWebApp\n{payload}".encode(), hashlib.sha256
+    ).hexdigest()
+    if not hmac.compare_digest(expected_signature, received_signature):
+        return None
+    return user_id
+
+
 @dataclass(frozen=True, slots=True)
 class Anime:
     id: int
@@ -798,20 +832,28 @@ def find_rendered_card(settings: Settings, image_hash: str, index: dict[str, str
     return None
 
 
-def webapp_url(settings: Settings, query_text: str = "") -> str:
+def webapp_url(
+    settings: Settings, query_text: str = "", *, inline_user_id: int | None = None
+) -> str:
     params = {"v": WEBAPP_ASSET_VERSION}
     if query_text and not parse_card_query(query_text):
         params["q"] = query_text
+    if inline_user_id is not None:
+        params["inline_session"] = create_inline_session(
+            settings.bot_token, inline_user_id
+        )
     query = f"?{urlencode(params)}" if params else ""
     return f"{settings.public_base_url.rstrip('/')}/{query}"
 
 
 def results_button(
-    settings: Settings, query_text: str = "", ru: bool = True
+    settings: Settings, query_text: str, ru: bool, user_id: int
 ) -> InlineQueryResultsButton:
     return InlineQueryResultsButton(
         text="🎨 Собрать карточку в WebApp" if ru else "🎨 Build a card in WebApp",
-        web_app=WebAppInfo(url=webapp_url(settings, query_text)),
+        web_app=WebAppInfo(
+            url=webapp_url(settings, query_text, inline_user_id=user_id)
+        ),
     )
 
 
@@ -917,7 +959,7 @@ def build_router(
                     results,
                     cache_time=cache_time,
                     is_personal=True,
-                    button=results_button(settings, text, ru),
+                    button=results_button(settings, text, ru, query.from_user.id),
                 )
             except TelegramBadRequest as exc:
                 if "query is too old" not in str(exc).casefold():
@@ -991,13 +1033,20 @@ async def create_web_app(
             headers={"Cache-Control": "no-store"},
         )
 
-    def require_webapp(request: web.Request) -> str:
+    def require_webapp(request: web.Request) -> tuple[str, str, bool]:
+        inline_user_id = validate_inline_session(
+            request.headers.get("X-Inline-Session", ""),
+            settings.bot_token,
+            settings.webapp_auth_max_age,
+        )
+        if inline_user_id is not None:
+            return f"user:{inline_user_id}", "", True
         init_data = request.headers.get("X-Telegram-Init-Data", "")
         if not validate_webapp_init_data(
             init_data, settings.bot_token, settings.webapp_auth_max_age
         ):
-            raise web.HTTPUnauthorized(text="valid Telegram WebApp initData required")
-        return init_data
+            raise web.HTTPUnauthorized(text="valid Telegram WebApp session required")
+        return webapp_actor(init_data), init_data, False
 
     async def healthz(_: web.Request) -> web.Response:
         return web.json_response({"ok": True})
@@ -1080,8 +1129,8 @@ async def create_web_app(
         )
 
     async def save_rendered(request: web.Request) -> web.Response:
-        init_data = require_webapp(request)
-        if not upload_limiter.allow(webapp_actor(init_data)):
+        actor, init_data, inline_mode = require_webapp(request)
+        if not upload_limiter.allow(actor):
             return web.json_response(
                 {"ok": False, "error": "upload rate limit exceeded"}, status=429
             )
@@ -1160,7 +1209,11 @@ async def create_web_app(
                     "Saved rendered card %s (%d bytes) to Telegram storage", card_id, len(raw)
                 )
 
-        prepared_message_id = await prepare_card_share(bot, init_data, card_id, meta)
+        prepared_message_id = (
+            None
+            if inline_mode
+            else await prepare_card_share(bot, init_data, card_id, meta)
+        )
         return web.json_response(
             {
                 "ok": True,
