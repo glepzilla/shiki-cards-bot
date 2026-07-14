@@ -49,16 +49,25 @@ jobs:
             ghcr.io/${{ github.repository }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: Upload deploy files
+        uses: actions/upload-artifact@v7
+        with:
+          name: deploy-files
+          path: |
+            compose.yml
+            secrets.enc.env
+          if-no-files-found: error
+          retention-days: 1
 
   deploy:
     needs: build
     runs-on: self-hosted
     steps:
-      - uses: actions/checkout@v5
+      - name: Download deploy files
+        uses: actions/download-artifact@v8
         with:
-          # The deploy workspace contains Docker-managed state; cleaning it can
-          # stall on ownership checks before compose is even reached.
-          clean: false
+          name: deploy-files
+          path: .
       - name: Decrypt secrets
         run: sops -d secrets.enc.env > .env
         env:
