@@ -55,6 +55,10 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v5
+        with:
+          # The deploy workspace contains Docker-managed state; cleaning it can
+          # stall on ownership checks before compose is even reached.
+          clean: false
       - name: Decrypt secrets
         run: sops -d secrets.enc.env > .env
         env:
