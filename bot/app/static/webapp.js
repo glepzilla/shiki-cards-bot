@@ -2,6 +2,7 @@
   'use strict';
 
   const tg = window.Telegram?.WebApp;
+  const systemTheme = window.matchMedia('(prefers-color-scheme: dark)');
   const hasTelegramAuth = Boolean(tg?.initData);
   const telegramPlatform = String(tg?.platform || 'unknown').toLowerCase();
   const inTelegram = hasTelegramAuth || telegramPlatform !== 'unknown';
@@ -77,11 +78,26 @@
   document.body.classList.toggle('mode-telegram', inTelegram);
   document.body.classList.toggle('mode-browser', !inTelegram);
 
+  function syncSystemTheme(event = systemTheme) {
+    const dark = event.matches;
+    const background = dark ? '#141f0e' : '#eee8d7';
+    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    if (inTelegram) {
+      try {
+        tg?.setHeaderColor?.(background);
+        tg?.setBackgroundColor?.(background);
+        tg?.setBottomBarColor?.(background);
+      } catch (_) { /* Older Telegram clients may reject custom colors. */ }
+    }
+  }
+
+  syncSystemTheme();
+  if (systemTheme.addEventListener) systemTheme.addEventListener('change', syncSystemTheme);
+  else systemTheme.addListener?.(syncSystemTheme);
+
   if (inTelegram) {
     tg?.ready();
     tg?.expand();
-    tg?.setHeaderColor?.('#f7f7f2');
-    tg?.setBackgroundColor?.('#f7f7f2');
     tg?.disableVerticalSwipes?.();
   }
 
@@ -234,7 +250,7 @@
     return h('button', { className: 'anime-result', type: 'button', onClick: () => onPick(anime) },
       h(Card, { hoverable: true, variant: 'outlined' },
         h('div', { className: 'result-content' },
-          h('img', { className: 'result-poster', src: proxyUrl(anime.image_preview || anime.image_url), alt: '' }),
+          h('img', { className: 'result-poster', src: proxyUrl(anime.image_preview || anime.image_url), alt: title }),
           h('div', { className: 'result-copy' },
             h('p', { className: 'result-title' }, title),
             anime.name !== title && h('p', { className: 'result-subtitle' }, anime.name),
@@ -275,7 +291,7 @@
     const pick = useCallback((anime) => { storeHistory(query.trim()); onPick(anime); }, [query, onPick]);
     const activeItems = query.trim().length >= 2 ? results : trending || [];
     return h('main', { className: 'app-shell' },
-      h('header', { className: 'app-header' }, h('div', { className: 'brand-mark', 'aria-hidden': true }, h('img', { src: logoUrl, alt: '' })), h('div', { className: 'header-copy' }, h(Heading, { as: 'h1', size: 'lg' }, 'Shikizilla'), h('p', null, T.tagline))),
+      h('header', { className: 'app-header' }, h('div', { className: 'brand-mark', 'aria-hidden': true }, h('img', { src: logoUrl, alt: '' })), h('div', { className: 'header-copy' }, h('span', { className: 'eyebrow' }, 'CARD STUDIO / 01'), h(Heading, { as: 'h1', size: 'lg' }, 'Shikizilla', h('span', { className: 'title-dot', 'aria-hidden': true }, '.')), h('p', null, T.tagline))),
       h(Card, { className: 'search-panel', variant: 'elevated', padding: 'md' }, h('div', { className: `search-field${query ? ' has-clear' : ''}` }, h('span', { key: 'icon', className: 'search-icon', 'aria-hidden': true }, icon('search')), h(Input, { key: 'input', inputSize: 'lg', placeholder: T.placeholder, value: query, onChange: (event) => setQuery(event.target.value), 'aria-label': T.placeholder }), query && h(Button, { key: 'clear', className: 'clear-search', variant: 'ghost', size: 'sm', type: 'button', onClick: () => setQuery(''), 'aria-label': T.clear }, '×'))),
       !query && history.length ? h('section', null, h('h2', { className: 'section-title' }, T.recent), h('div', { className: 'history' }, history.map((item) => h(Button, { key: item, variant: 'outline', size: 'sm', type: 'button', onClick: () => setQuery(item) }, item)))) : null,
       h('section', null, h('h2', { className: 'section-title' }, query ? T.search : T.trending), loading || (!query && trending === null) ? h('div', { className: 'loading-row' }, h(Spinner, null)) : error ? h(Alert, { variant: 'danger' }, error) : query && !activeItems.length ? h('div', { className: 'empty-state' }, h(Heading, { as: 'h3', size: 'sm' }, T.noResults), h('p', null, T.empty)) : h('div', { className: 'result-list' }, activeItems.map((anime) => h(SearchResult, { key: `${anime.source}-${anime.id}`, anime, onPick: pick })))),
