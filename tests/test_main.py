@@ -12,6 +12,7 @@ from urllib.parse import urlencode
 from aiohttp import ClientSession
 from aiohttp.test_utils import TestClient, TestServer
 from app.main import (
+    PROXIED_IMAGE_HOSTS,
     WEBAPP_ASSET_VERSION,
     Anime,
     PosterProviderResult,
@@ -205,6 +206,10 @@ def test_upstream_sessions_proxy_only_tenrai_api_requests() -> None:
 
     assert direct.calls[0][2]["proxy"] == "http://proxy.test:7890"
     assert direct.calls[1][2].get("proxy") is None
+
+
+def test_unreliable_image_cdns_use_the_configured_proxy() -> None:
+    assert {"cdn.myanimelist.net", "s4.anilist.co"} == PROXIED_IMAGE_HOSTS
 
 
 def test_ttl_cache_expires_and_evicts_oldest() -> None:

@@ -62,8 +62,8 @@ ALLOWED_IMAGE_HOSTS = {
     "s4.anilist.co",
 }
 ALLOWED_LINK_HOSTS = {"shikimori.one", "shikimori.io"}
-# Direct access from the VPS to AniList's Cloudflare image edge is unreliable.
-PROXIED_IMAGE_HOSTS = {"s4.anilist.co"}
+# Direct access from the VPS to these image CDNs is unreliable.
+PROXIED_IMAGE_HOSTS = {"cdn.myanimelist.net", "s4.anilist.co"}
 PROXIED_API_HOSTS = {"api.tenrai.org"}
 WEBAPP_DIR = Path(__file__).parent
 WEBAPP_HTML_PATH = WEBAPP_DIR / "webapp.html"
