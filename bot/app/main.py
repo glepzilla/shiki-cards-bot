@@ -47,12 +47,12 @@ from app.cache import SlidingWindowRateLimiter, Throttle, TTLCache
 
 SHIKIMORI_ORIGIN = "https://shikimori.io"
 ANILIST_API = "https://graphql.anilist.co"
-JIKAN_API = "https://api.jikan.moe/v4"
+TENRAI_API = "https://api.tenrai.org/v1"
 USER_AGENT = "shikizilla/0.2"
 UPSTREAM_REQUEST_TIMEOUT = 4.0
 INLINE_SEARCH_TIMEOUT = 8.0
-JIKAN_FETCH_TIMEOUT = 8.0
-JIKAN_GALLERY_TIMEOUT = 5.0
+TENRAI_FETCH_TIMEOUT = 8.0
+TENRAI_GALLERY_TIMEOUT = 5.0
 MAX_RENDERED_IMAGE_BYTES = 5 * 1024 * 1024
 MAX_PROXY_IMAGE_BYTES = 5 * 1024 * 1024
 ALLOWED_IMAGE_HOSTS = {
@@ -64,7 +64,7 @@ ALLOWED_IMAGE_HOSTS = {
 ALLOWED_LINK_HOSTS = {"shikimori.one", "shikimori.io"}
 # Direct access from the VPS to AniList's Cloudflare image edge is unreliable.
 PROXIED_IMAGE_HOSTS = {"s4.anilist.co"}
-PROXIED_API_HOSTS = {"api.jikan.moe"}
+PROXIED_API_HOSTS = {"api.tenrai.org"}
 WEBAPP_DIR = Path(__file__).parent
 WEBAPP_HTML_PATH = WEBAPP_DIR / "webapp.html"
 WEBAPP_STATIC_DIR = WEBAPP_DIR / "static"
@@ -234,7 +234,7 @@ class Anime:
 THROTTLES = {
     "shikimori.one": Throttle(0.35),
     "shikimori.io": Throttle(0.35),
-    "api.jikan.moe": Throttle(0.5),
+    "api.tenrai.org": Throttle(0.5),
     "graphql.anilist.co": Throttle(0.35),
 }
 
@@ -377,21 +377,21 @@ class PosterProviderResult:
     incomplete: bool = False
 
 
-async def fetch_jikan_json(session: UpstreamSessions, url: str) -> Any:
+async def fetch_tenrai_json(session: UpstreamSessions, url: str) -> Any:
     """Try the configured proxy first and use the direct route as a fallback."""
     try:
         return await fetch_json(session, url)
     except Exception:
         if not session.proxy_url:
             raise
-        logging.warning("Jikan proxy request failed for %s; trying direct route", url)
+        logging.warning("Tenrai proxy request failed for %s; trying direct route", url)
         return await fetch_json(session, url, force_direct=True)
 
 
-async def fetch_jikan_pictures(
+async def fetch_tenrai_pictures(
     session: UpstreamSessions, anime_id: int
 ) -> PosterProviderResult:
-    details = await fetch_jikan_json(session, f"{JIKAN_API}/anime/{anime_id}")
+    details = await fetch_tenrai_json(session, f"{TENRAI_API}/anime/{anime_id}")
     images = as_mapping(as_mapping(details).get("data")).get("images")
     jpg = as_mapping(as_mapping(images).get("jpg"))
     primary_url = as_text(jpg.get("large_image_url") or jpg.get("image_url"))
@@ -400,11 +400,11 @@ async def fetch_jikan_pictures(
     seen = {primary_url} if primary_url else set()
     try:
         data = await asyncio.wait_for(
-            fetch_jikan_json(session, f"{JIKAN_API}/anime/{anime_id}/pictures"),
-            timeout=JIKAN_GALLERY_TIMEOUT,
+            fetch_tenrai_json(session, f"{TENRAI_API}/anime/{anime_id}/pictures"),
+            timeout=TENRAI_GALLERY_TIMEOUT,
         )
     except Exception:
-        logging.warning("Jikan gallery is unavailable for %s", anime_id, exc_info=True)
+        logging.warning("Tenrai gallery is unavailable for %s", anime_id, exc_info=True)
         return PosterProviderResult(posters=posters, incomplete=True)
 
     for item in as_mapping(data).get("data") or []:
@@ -521,17 +521,17 @@ async def collect_posters(
         fetch_anilist_cover(session, anime_id),
         fetch_shikimori_poster(session, anime_id),
         asyncio.wait_for(
-            fetch_jikan_pictures(session, anime_id), timeout=JIKAN_FETCH_TIMEOUT
+            fetch_tenrai_pictures(session, anime_id), timeout=TENRAI_FETCH_TIMEOUT
         ),
         return_exceptions=True,
     )
     posters: list[dict[str, str]] = []
     warnings: list[str] = []
     seen: set[str] = set()
-    for source, result in zip(("anilist", "shikimori", "jikan"), results, strict=True):
+    for source, result in zip(("anilist", "shikimori", "tenrai"), results, strict=True):
         if isinstance(result, BaseException):
             logging.warning("poster fetch (%s) failed for %s: %s", source, anime_id, result)
-            if source == "jikan":
+            if source == "tenrai":
                 warnings.append(source)
             continue
         if isinstance(result, PosterProviderResult):

@@ -24,7 +24,7 @@ from app.main import (
     collect_posters,
     create_inline_session,
     create_web_app,
-    fetch_jikan_pictures,
+    fetch_tenrai_pictures,
     parse_card_query,
     validate_inline_session,
     validate_webapp_init_data,
@@ -118,10 +118,10 @@ def test_anilist_cover_replaces_the_default_poster() -> None:
     assert apply_anilist_covers([anime], {}) == [anime]
 
 
-def test_collect_posters_includes_jikan_when_available() -> None:
+def test_collect_posters_includes_tenrai_when_available() -> None:
     anilist = "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/17.jpg"
     shikimori = "https://shikimori.io/system/animes/original/17.jpg"
-    jikan = "https://cdn.myanimelist.net/images/anime/1/17l.jpg"
+    tenrai = "https://cdn.myanimelist.net/images/anime/1/17l.jpg"
 
     async def check() -> None:
         with (
@@ -131,8 +131,8 @@ def test_collect_posters_includes_jikan_when_available() -> None:
                 AsyncMock(return_value=[(shikimori, shikimori)]),
             ),
             patch(
-                "app.main.fetch_jikan_pictures",
-                AsyncMock(return_value=PosterProviderResult([(jikan, jikan)])),
+                "app.main.fetch_tenrai_pictures",
+                AsyncMock(return_value=PosterProviderResult([(tenrai, tenrai)])),
             ),
         ):
             posters, warnings = await collect_posters(object(), 17)  # type: ignore[arg-type]
@@ -140,15 +140,15 @@ def test_collect_posters_includes_jikan_when_available() -> None:
         assert [poster["source"] for poster in posters] == [
             "anilist",
             "shikimori",
-            "jikan",
+            "tenrai",
         ]
-        assert [poster["url"] for poster in posters] == [anilist, shikimori, jikan]
+        assert [poster["url"] for poster in posters] == [anilist, shikimori, tenrai]
         assert warnings == []
 
     asyncio.run(check())
 
 
-def test_collect_posters_warns_when_jikan_is_unavailable() -> None:
+def test_collect_posters_warns_when_tenrai_is_unavailable() -> None:
     shikimori = "https://shikimori.io/system/animes/original/17.jpg"
 
     async def check() -> None:
@@ -158,19 +158,19 @@ def test_collect_posters_warns_when_jikan_is_unavailable() -> None:
                 "app.main.fetch_shikimori_poster",
                 AsyncMock(return_value=[(shikimori, shikimori)]),
             ),
-            patch("app.main.fetch_jikan_pictures", AsyncMock(side_effect=TimeoutError)),
+            patch("app.main.fetch_tenrai_pictures", AsyncMock(side_effect=TimeoutError)),
         ):
             posters, warnings = await collect_posters(object(), 17)  # type: ignore[arg-type]
 
         assert posters == [
             {"url": shikimori, "thumb": shikimori, "source": "shikimori"}
         ]
-        assert warnings == ["jikan"]
+        assert warnings == ["tenrai"]
 
     asyncio.run(check())
 
 
-def test_jikan_keeps_primary_poster_and_warns_when_gallery_is_unavailable() -> None:
+def test_tenrai_keeps_primary_poster_and_warns_when_gallery_is_unavailable() -> None:
     async def check() -> None:
         url = "https://cdn.myanimelist.net/images/anime/1/17l.jpg"
         thumb = "https://cdn.myanimelist.net/images/anime/1/17.jpg"
@@ -180,8 +180,8 @@ def test_jikan_keeps_primary_poster_and_warns_when_gallery_is_unavailable() -> N
                 TimeoutError,
             ]
         )
-        with patch("app.main.fetch_jikan_json", fetch):
-            result = await fetch_jikan_pictures(object(), 17)  # type: ignore[arg-type]
+        with patch("app.main.fetch_tenrai_json", fetch):
+            result = await fetch_tenrai_pictures(object(), 17)  # type: ignore[arg-type]
 
         assert result.posters == [(url, thumb)]
         assert result.incomplete
@@ -189,7 +189,7 @@ def test_jikan_keeps_primary_poster_and_warns_when_gallery_is_unavailable() -> N
     asyncio.run(check())
 
 
-def test_upstream_sessions_proxy_only_jikan_api_requests() -> None:
+def test_upstream_sessions_proxy_only_tenrai_api_requests() -> None:
     class CapturingSession:
         def __init__(self) -> None:
             self.calls: list[tuple[str, str, dict[str, object]]] = []
@@ -200,7 +200,7 @@ def test_upstream_sessions_proxy_only_jikan_api_requests() -> None:
 
     direct = CapturingSession()
     sessions = UpstreamSessions(direct, "http://proxy.test:7890")  # type: ignore[arg-type]
-    sessions.request("GET", "https://api.jikan.moe/v4/anime/17")
+    sessions.request("GET", "https://api.tenrai.org/v1/anime/17")
     sessions.request("GET", "https://shikimori.io/api/animes/17")
 
     assert direct.calls[0][2]["proxy"] == "http://proxy.test:7890"
