@@ -24,6 +24,7 @@ Shikizilla помогает найти аниме, выбрать постер �
 ## Возможности
 
 - поиск аниме и актуальная подборка на главном экране;
+- вход через Shikimori, личный список «смотрю» и оценки друзей для этих аниме;
 - несколько источников и вариантов постеров;
 - девять стилей карточек;
 - настройка названия, оценки, жанров и подписи;
@@ -57,6 +58,29 @@ PYTHONPATH=bot uv run python -m app.main
 ```
 
 В браузере Shikizilla будет доступна по адресу <http://localhost:8080>.
+
+### Интеграция с Shikimori
+
+Создайте OAuth-приложение в [настройках Shikimori](https://shikimori.io/oauth/applications)
+и добавьте в него callback URL:
+
+```text
+https://ваш-домен/oauth/shikimori/callback
+```
+
+Затем заполните в `.env` `SHIKIMORI_CLIENT_ID`, `SHIKIMORI_CLIENT_SECRET` и
+`SHIKIMORI_TOKEN_KEY`. Последний ключ создаётся один раз и нужен для шифрования
+токенов пользователей на диске:
+
+```bash
+uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+После перезапуска в WebApp появится раздел «Моё»: пользователь входит через
+Shikimori, видит свой список «смотрю», прогресс и оценки друзей. Токены хранятся
+только в зашифрованном файле `SHIKIMORI_TOKENS_FILE` и привязаны к Telegram ID.
+Чтобы после входа пользователь сразу возвращался в Mini App, настройте это же
+приложение как **Main Mini App** у @BotFather и укажите `BOT_USERNAME` без `@`.
 
 ### Через Docker
 

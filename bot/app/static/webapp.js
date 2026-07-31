@@ -21,7 +21,7 @@
   const langCode = (tg?.initDataUnsafe?.user?.language_code || navigator.language || 'ru').toLowerCase();
   const RU = langCode.startsWith('ru');
   const T = RU ? {
-    tagline: 'Конструктор аниме-карточек', placeholder: 'Название аниме', search: 'Поиск',
+    tagline: 'Конструктор аниме-карточек', placeholder: 'Название аниме', search: 'Поиск', account: 'Моё', cards: 'Карточки',
     recent: 'Недавние запросы', trending: 'Сейчас смотрят', noResults: 'Ничего не нашлось',
     searchError: 'Поиск временно недоступен', retry: 'Повторить', back: 'К поиску', clear: 'Очистить поиск',
     poster: 'Постер', style: 'Стиль карточки', title: 'Название', elements: 'Элементы',
@@ -31,9 +31,13 @@
     shareError: 'Не получилось отправить карточку. Попробуйте ещё раз.', copied: 'Скопировано: ', inlineCopied: 'ID карточки скопирован: ',
     eps: 'эп.', ongoing: 'онгоинг', anons: 'анонс', exclusive: 'ЭКСКЛЮЗИВ', loadingPosters: 'Загружаем варианты…',
     tenraiUnavailable: 'Tenrai API временно недоступен. Остальные постеры уже загружены.',
+    myShikimori: 'Мой Shikimori', connectTitle: 'Подключите Shikimori', connectText: 'Войдите, чтобы увидеть аниме из списка «смотрю» и оценки друзей.',
+    connect: 'Войти через Shikimori', configuredLater: 'Интеграция с Shikimori пока не настроена.', refresh: 'Обновить', logout: 'Отключить',
+    watching: 'Смотрю', progress: 'Просмотрено', friends: 'друзей', friendScores: 'Оценки друзей', noFriendScores: 'У друзей пока нет оценок',
+    dashboardError: 'Не удалось загрузить список. Попробуйте ещё раз.', noWatching: 'В списке «смотрю» пока нет аниме.',
     presets: { classic: 'Классика', aurora: 'Аврора', glass: 'Стекло', neon: 'Неон', vhs: 'VHS', manga: 'Манга', mag: 'Журнал', polaroid: 'Полароид', print: 'Принт' },
   } : {
-    tagline: 'Anime card maker', placeholder: 'Anime title', search: 'Search',
+    tagline: 'Anime card maker', placeholder: 'Anime title', search: 'Search', account: 'My', cards: 'Cards',
     recent: 'Recent searches', trending: 'Airing now', noResults: 'Nothing found',
     searchError: 'Search is temporarily unavailable', retry: 'Retry', back: 'Back to search', clear: 'Clear search',
     poster: 'Poster', style: 'Card style', title: 'Title', elements: 'Elements',
@@ -43,6 +47,10 @@
     shareError: 'Could not send the card. Please try again.', copied: 'Copied: ', inlineCopied: 'Card ID copied: ',
     eps: 'ep.', ongoing: 'airing', anons: 'soon', exclusive: 'EXCLUSIVE', loadingPosters: 'Loading options…',
     tenraiUnavailable: 'Tenrai API is temporarily unavailable. Other posters are still available.',
+    myShikimori: 'My Shikimori', connectTitle: 'Connect Shikimori', connectText: 'Sign in to see your watching list and friends’ ratings.',
+    connect: 'Sign in with Shikimori', configuredLater: 'Shikimori integration is not configured yet.', refresh: 'Refresh', logout: 'Disconnect',
+    watching: 'Watching', progress: 'Progress', friends: 'friends', friendScores: 'Friends’ ratings', noFriendScores: 'No friends have rated it yet',
+    dashboardError: 'Could not load your list. Please try again.', noWatching: 'There is nothing in your watching list yet.',
     presets: { classic: 'Classic', aurora: 'Aurora', glass: 'Glass', neon: 'Neon', vhs: 'VHS', manga: 'Manga', mag: 'Magazine', polaroid: 'Polaroid', print: 'Print' },
   };
   const PRESETS = [
@@ -126,6 +134,9 @@
   }
   function icon(kind) {
     if (kind === 'search') return h('svg', { width: 17, height: 17, viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': true }, h('circle', { cx: 11, cy: 11, r: 6, stroke: 'currentColor', strokeWidth: 2 }), h('path', { d: 'm16 16 4 4', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' }));
+    if (kind === 'account') return h('svg', { width: 19, height: 19, viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': true }, h('circle', { cx: 12, cy: 8, r: 3.2, stroke: 'currentColor', strokeWidth: 1.8 }), h('path', { d: 'M5 20c.7-3.4 3-5.2 7-5.2s6.3 1.8 7 5.2', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' }));
+    if (kind === 'cards') return h('svg', { width: 19, height: 19, viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': true }, h('rect', { x: 4, y: 4, width: 16, height: 16, rx: 3, stroke: 'currentColor', strokeWidth: 1.8 }), h('path', { d: 'M8 9h8M8 14h5', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' }));
+    if (kind === 'refresh') return h('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': true }, h('path', { d: 'M20 11a8 8 0 1 0 1 4', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' }), h('path', { d: 'M20 4v7h-7', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round' }));
     return h('svg', { width: 20, height: 20, viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': true }, h('path', { d: 'm15 18-6-6 6-6', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' }));
   }
 
@@ -262,7 +273,7 @@
     );
   }
 
-  function SearchScreen({ onPick }) {
+  function SearchScreen({ onPick, onOpenAccount }) {
     const [query, setQuery] = useState(() => new URLSearchParams(window.location.search).get('q') || '');
     const [results, setResults] = useState([]); const [trending, setTrending] = useState(null);
     const [loading, setLoading] = useState(false); const [error, setError] = useState('');
@@ -291,11 +302,72 @@
     const pick = useCallback((anime) => { storeHistory(query.trim()); onPick(anime); }, [query, onPick]);
     const activeItems = query.trim().length >= 2 ? results : trending || [];
     return h('main', { className: 'app-shell' },
-      h('header', { className: 'app-header' }, h('div', { className: 'brand-mark', 'aria-hidden': true }, h('img', { src: logoUrl, alt: '' })), h('div', { className: 'header-copy' }, h('span', { className: 'eyebrow' }, 'CARD STUDIO / 01'), h(Heading, { as: 'h1', size: 'lg' }, 'Shikizilla', h('span', { className: 'title-dot', 'aria-hidden': true }, '.')), h('p', null, T.tagline))),
+      h('header', { className: 'app-header' }, h('div', { className: 'brand-mark', 'aria-hidden': true }, h('img', { src: logoUrl, alt: '' })), h('div', { className: 'header-copy' }, h('span', { className: 'eyebrow' }, 'CARD STUDIO / 01'), h(Heading, { as: 'h1', size: 'lg' }, 'Shikizilla', h('span', { className: 'title-dot', 'aria-hidden': true }, '.')), h('p', null, T.tagline)), h(Button, { className: 'account-button', variant: 'outline', size: 'sm', type: 'button', onClick: onOpenAccount }, icon('account'), h('span', null, T.account))),
       h(Card, { className: 'search-panel', variant: 'elevated', padding: 'md' }, h('div', { className: `search-field${query ? ' has-clear' : ''}` }, h('span', { key: 'icon', className: 'search-icon', 'aria-hidden': true }, icon('search')), h(Input, { key: 'input', inputSize: 'lg', placeholder: T.placeholder, value: query, onChange: (event) => setQuery(event.target.value), 'aria-label': T.placeholder }), query && h(Button, { key: 'clear', className: 'clear-search', variant: 'ghost', size: 'sm', type: 'button', onClick: () => setQuery(''), 'aria-label': T.clear }, '×'))),
       !query && history.length ? h('section', null, h('h2', { className: 'section-title' }, T.recent), h('div', { className: 'history' }, history.map((item) => h(Button, { key: item, variant: 'outline', size: 'sm', type: 'button', onClick: () => setQuery(item) }, item)))) : null,
       h('section', null, h('h2', { className: 'section-title' }, query ? T.search : T.trending), loading || (!query && trending === null) ? h('div', { className: 'loading-row' }, h(Spinner, null)) : error ? h(Alert, { variant: 'danger' }, error) : query && !activeItems.length ? h('div', { className: 'empty-state' }, h(Heading, { as: 'h3', size: 'sm' }, T.noResults), h('p', null, T.empty)) : h('div', { className: 'result-list' }, activeItems.map((anime) => h(SearchResult, { key: `${anime.source}-${anime.id}`, anime, onPick: pick })))),
     );
+  }
+
+  function MyScreen({ onBack, onPick, notify }) {
+    const [dashboard, setDashboard] = useState(null); const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [connecting, setConnecting] = useState(false);
+    const load = useCallback(async (fresh = false) => {
+      setLoading(true); setError('');
+      try {
+        const response = await apiFetch(`/api/shikimori/dashboard${fresh ? '?refresh=1' : ''}`);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'dashboard failed');
+        setDashboard(data);
+      } catch (_) { setError(T.dashboardError); }
+      finally { setLoading(false); }
+    }, []);
+    useEffect(() => { load(); }, [load]);
+    const connect = async () => {
+      if (connecting) return;
+      setConnecting(true);
+      try {
+        const response = await apiFetch('/api/shikimori/authorize', { method: 'POST' });
+        const data = await response.json();
+        if (!response.ok || !data.url) throw new Error('authorize failed');
+        tg?.HapticFeedback?.impactOccurred?.('light');
+        if (typeof tg?.openLink === 'function') tg.openLink(data.url);
+        else window.location.assign(data.url);
+      } catch (_) { notify(T.dashboardError); }
+      finally { setConnecting(false); }
+    };
+    const logout = async () => {
+      try { await apiFetch('/api/shikimori/logout', { method: 'POST' }); setDashboard({ available: true, connected: false }); }
+      catch (_) { notify(T.dashboardError); }
+    };
+    const profile = dashboard?.profile;
+    return h('main', { className: 'app-shell my-shell' }, [
+      h('header', { className: 'app-header my-header', key: 'header' }, [
+        h('button', { className: 'brand-mark', key: 'mark', type: 'button', onClick: onBack, 'aria-label': T.cards }, h('img', { src: logoUrl, alt: '' })),
+        h('div', { className: 'header-copy', key: 'copy' }, [h('span', { className: 'eyebrow', key: 'eyebrow' }, 'SHIKIMORI / 02'), h(Heading, { as: 'h1', size: 'lg', key: 'title' }, T.myShikimori), h('p', { key: 'tagline' }, dashboard?.connected ? profile?.nickname : T.tagline)]),
+        h(Button, { className: 'account-button', variant: 'outline', size: 'sm', type: 'button', onClick: onBack, key: 'cards' }, icon('cards'), h('span', null, T.cards)),
+      ]),
+      loading ? h('div', { className: 'loading-row', key: 'loading' }, h(Spinner, null)) : error ? h(Alert, { variant: 'danger', key: 'error' }, [h('p', { key: 'copy' }, error), h(Button, { key: 'retry', type: 'button', size: 'sm', variant: 'outline', onClick: () => load(true) }, T.retry)]) : !dashboard?.available ? h(Card, { className: 'connect-card', variant: 'elevated', key: 'unavailable' }, [h(Heading, { as: 'h2', size: 'md', key: 'title' }, T.myShikimori), h('p', { key: 'copy' }, T.configuredLater)]) : !dashboard.connected ? h(Card, { className: 'connect-card', variant: 'elevated', key: 'connect' }, [h('span', { className: 'connect-symbol', key: 'symbol', 'aria-hidden': true }, icon('account')), h(Heading, { as: 'h2', size: 'md', key: 'title' }, T.connectTitle), h('p', { key: 'copy' }, T.connectText), h(Button, { className: 'primary-action', key: 'button', type: 'button', size: 'lg', loading: connecting, onClick: connect }, T.connect)]) : h('section', { className: 'dashboard-content', key: 'dashboard' }, [
+        h('div', { className: 'profile-strip', key: 'profile' }, [
+          profile?.avatar ? h('img', { className: 'profile-avatar', key: 'avatar', src: proxyUrl(profile.avatar), alt: '' }) : h('span', { className: 'profile-placeholder', key: 'avatar', 'aria-hidden': true }, icon('account')),
+          h('div', { key: 'copy' }, [h('strong', { key: 'name' }, profile?.nickname), h('p', { key: 'count' }, `${dashboard.friends_count || 0} ${T.friends}`)]),
+          h(Button, { className: 'refresh-button', type: 'button', variant: 'ghost', size: 'sm', onClick: () => load(true), 'aria-label': T.refresh, key: 'refresh' }, icon('refresh')),
+          h(Button, { className: 'logout-button', type: 'button', variant: 'ghost', size: 'sm', onClick: logout, key: 'logout' }, T.logout),
+        ]),
+        h('h2', { className: 'section-title', key: 'heading' }, T.watching),
+        dashboard.watching?.length ? h('div', { className: 'watch-list', key: 'list' }, dashboard.watching.map((anime) => {
+          const total = Number(anime.episodes || 0); const progress = Number(anime.progress || 0); const percent = total ? Math.min(100, Math.round(progress / total * 100)) : 0;
+          return h('button', { className: 'watch-item', type: 'button', onClick: () => onPick(anime), key: anime.id }, h(Card, { variant: 'outlined' }, h('div', { className: 'watch-content' }, [
+            h('img', { className: 'result-poster', src: proxyUrl(anime.image_preview || anime.image_url), alt: anime.title || anime.name, key: 'poster' }),
+            h('div', { className: 'watch-copy', key: 'copy' }, [
+              h('p', { className: 'result-title', key: 'title' }, anime.title || anime.name),
+              h('p', { className: 'watch-progress', key: 'progress' }, `${T.progress}: ${progress}${total ? ` / ${total}` : ''}`),
+              total ? h('div', { className: 'progress-track', key: 'track', 'aria-label': `${T.progress}: ${percent}%` }, h('span', { style: { width: `${percent}%` } })) : null,
+              h('div', { className: 'rating-block', key: 'ratings' }, [h('span', { className: 'rating-label', key: 'label' }, T.friendScores), anime.friends?.length ? h('div', { className: 'friend-ratings', key: 'ratings' }, anime.friends.map((friend) => h('span', { className: 'friend-rating', key: friend.id, title: `${friend.nickname}: ${friend.score}` }, friend.avatar ? h('img', { src: proxyUrl(friend.avatar), alt: '' }) : null, h('span', null, friend.nickname), h('b', null, friend.score)))) : h('span', { className: 'no-ratings', key: 'empty' }, T.noFriendScores)]),
+            ]),
+          ])));
+        })) : h('div', { className: 'empty-state', key: 'empty' }, h('p', null, T.noWatching)),
+      ]),
+    ]);
   }
 
   function Editor({ anime, onBack, notify }) {
@@ -391,9 +463,9 @@
   }
 
   function App() {
-    const [selected, setSelected] = useState(null); const [toast, setToast] = useState('');
+    const [selected, setSelected] = useState(null); const [view, setView] = useState('cards'); const [toast, setToast] = useState('');
     const notify = useCallback((message) => { setToast(message); window.setTimeout(() => setToast(''), 2800); }, []);
-    return h(window.React.Fragment, null, selected ? h(Editor, { anime: selected, onBack: () => setSelected(null), notify }) : h(SearchScreen, { onPick: setSelected }), toast ? h('div', { className: 'toast', role: 'status' }, toast) : null);
+    return h(window.React.Fragment, null, selected ? h(Editor, { anime: selected, onBack: () => setSelected(null), notify }) : view === 'account' ? h(MyScreen, { onBack: () => setView('cards'), onPick: setSelected, notify }) : h(SearchScreen, { onPick: setSelected, onOpenAccount: () => setView('account') }), toast ? h('div', { className: 'toast', role: 'status' }, toast) : null);
   }
 
   window.ReactDOM.createRoot(document.getElementById('ds-root')).render(h(App));
