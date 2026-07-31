@@ -18,6 +18,8 @@ jobs:
           enable-cache: true
       - name: Install locked development dependencies
         run: uv sync --frozen --all-groups
+      - name: Compile
+        run: uv run python -m compileall -q bot tests
       - name: Lint
         run: uv run ruff check bot tests
       - name: Type check

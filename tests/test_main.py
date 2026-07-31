@@ -104,6 +104,38 @@ def test_shikimori_token_store_encrypts_tokens_at_rest(tmp_path: Path) -> None:
     assert store.get(42) is None
 
 
+def test_invalid_shikimori_token_key_disables_oauth_without_stopping_webapp(
+    tmp_path: Path,
+) -> None:
+    class BotStub:
+        pass
+
+    async def check() -> None:
+        settings = make_settings(tmp_path).model_copy(
+            update={
+                "shikimori_client_id": "client-id",
+                "shikimori_client_secret": "client-secret",
+                "shikimori_token_key": "not-a-fernet-key",
+            }
+        )
+        async with ClientSession() as direct:
+            app = await create_web_app(
+                settings, UpstreamSessions(direct), TTLCache(ttl=60), BotStub()  # type: ignore[arg-type]
+            )
+            client = TestClient(TestServer(app))
+            await client.start_server()
+            try:
+                response = await client.get("/healthz")
+                assert await response.json() == {
+                    "ok": True,
+                    "shikimori_oauth_configured": False,
+                }
+            finally:
+                await client.close()
+
+    asyncio.run(check())
+
+
 def test_shikimori_authorize_url_uses_registered_callback(tmp_path: Path) -> None:
     settings = Settings(
         bot_token="test-token",

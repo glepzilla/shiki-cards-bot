@@ -121,7 +121,7 @@ def as_text(value: Any) -> str | None:
 def as_int(value: Any) -> int | None:
     try:
         return int(value) if value is not None and not isinstance(value, bool) else None
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
 
 
@@ -220,7 +220,7 @@ def webapp_user(init_data: str) -> dict[str, Any]:
     try:
         user = json.loads(dict(parse_qsl(init_data, keep_blank_values=True)).get("user", ""))
         return as_mapping(user)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return {}
 
 
@@ -230,7 +230,7 @@ def validate_webapp_init_data(init_data: str, bot_token: str, max_age: int) -> b
         pairs = dict(parse_qsl(init_data, keep_blank_values=True))
         received_hash = pairs.pop("hash")
         auth_date = int(pairs["auth_date"])
-    except KeyError, TypeError, ValueError:
+    except (KeyError, TypeError, ValueError):
         return False
 
     now = int(time.time())
@@ -323,8 +323,9 @@ class Anime:
         )
 
 THROTTLES = {
-    "shikimori.one": Throttle(0.35),
-    "shikimori.io": Throttle(0.35),
+    # Shikimori permits 90 requests a minute: keep a small margin below it.
+    "shikimori.one": Throttle(2 / 3),
+    "shikimori.io": Throttle(2 / 3),
     "api.tenrai.org": Throttle(0.5),
     "graphql.anilist.co": Throttle(0.35),
 }
@@ -1027,14 +1028,14 @@ def load_card_meta(settings: Settings, card_id: str) -> dict[str, Any]:
     try:
         loaded = json.loads(meta_path.read_text())
         return loaded if isinstance(loaded, dict) else {}
-    except OSError, ValueError:
+    except (OSError, ValueError):
         return {}
 
 
 def load_rendered_index(settings: Settings) -> dict[str, str]:
     try:
         loaded = json.loads((settings.rendered_dir / ".rendered-index.json").read_text())
-    except OSError, ValueError:
+    except (OSError, ValueError):
         return {}
     if not isinstance(loaded, dict):
         return {}
@@ -1270,11 +1271,14 @@ async def create_web_app(
     rendered_lock = asyncio.Lock()
     token_lock = asyncio.Lock()
     oauth_states = OAuthStateStore()
-    token_store = (
-        ShikimoriTokenStore(settings.shikimori_tokens_file, settings.shikimori_token_key or "")
-        if shikimori_oauth_enabled(settings)
-        else None
-    )
+    token_store: ShikimoriTokenStore | None = None
+    if shikimori_oauth_enabled(settings):
+        try:
+            token_store = ShikimoriTokenStore(
+                settings.shikimori_tokens_file, settings.shikimori_token_key or ""
+            )
+        except (TypeError, ValueError):
+            logging.exception("Shikimori OAuth disabled: invalid token encryption key")
     bot_username = as_text(settings.bot_username)
 
     async def webapp_page(_: web.Request) -> web.Response:
@@ -1492,7 +1496,7 @@ async def create_web_app(
             )
         try:
             payload = await request.json()
-        except json.JSONDecodeError, web.HTTPBadRequest:
+        except (json.JSONDecodeError, web.HTTPBadRequest):
             return web.json_response({"ok": False, "error": "JSON body required"}, status=400)
         if not isinstance(payload, dict):
             return web.json_response({"ok": False, "error": "JSON object required"}, status=400)
