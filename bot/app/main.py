@@ -1333,6 +1333,9 @@ async def create_web_app(
             {"ok": True, "shikimori_oauth_configured": token_store is not None}
         )
 
+    def shikimori_json(payload: dict[str, Any], status: int = 200) -> web.Response:
+        return web.json_response(payload, status=status, headers={"Cache-Control": "no-store"})
+
     async def shikimori_authorize_api(request: web.Request) -> web.Response:
         telegram_user_id = require_telegram_user(request)
         if token_store is None:
@@ -1347,27 +1350,27 @@ async def create_web_app(
     async def shikimori_dashboard_api(request: web.Request) -> web.Response:
         telegram_user_id = require_telegram_user(request)
         if token_store is None:
-            return web.json_response({"available": False, "connected": False})
+            return shikimori_json({"available": False, "connected": False})
         access_token = await user_access_token(telegram_user_id)
         if not access_token:
-            return web.json_response({"available": True, "connected": False})
+            return shikimori_json({"available": True, "connected": False})
         cached = shikimori_cache.get(str(telegram_user_id))
         if cached is not None and request.query.get("refresh") != "1":
-            return web.json_response(cached)
+            return shikimori_json(cached)
         try:
             dashboard = await shikimori_dashboard(session, access_token)
         except ClientResponseError as exc:
             if exc.status in (401, 403):
                 async with token_lock:
                     token_store.delete(telegram_user_id)
-                return web.json_response({"available": True, "connected": False})
+                return shikimori_json({"available": True, "connected": False})
             logging.warning("Shikimori dashboard request failed", exc_info=True)
-            return web.json_response({"error": "Shikimori is temporarily unavailable"}, status=502)
+            return shikimori_json({"error": "Shikimori is temporarily unavailable"}, status=502)
         except Exception:
             logging.warning("Shikimori dashboard request failed", exc_info=True)
-            return web.json_response({"error": "Shikimori is temporarily unavailable"}, status=502)
+            return shikimori_json({"error": "Shikimori is temporarily unavailable"}, status=502)
         shikimori_cache.put(str(telegram_user_id), dashboard)
-        return web.json_response(dashboard)
+        return shikimori_json(dashboard)
 
     async def shikimori_logout_api(request: web.Request) -> web.Response:
         telegram_user_id = require_telegram_user(request)
