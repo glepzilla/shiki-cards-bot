@@ -34,6 +34,7 @@
     myShikimori: 'Мой Shikimori', connectTitle: 'Подключите Shikimori', connectText: 'Войдите, чтобы увидеть аниме из списка «смотрю» и оценки друзей.',
     connect: 'Войти через Shikimori', configuredLater: 'Интеграция с Shikimori пока не настроена.', refresh: 'Обновить', logout: 'Отключить',
     watching: 'Смотрю', progress: 'Просмотрено', friends: 'друзей', friendScores: 'Оценки друзей', noFriendScores: 'У друзей пока нет оценок',
+    watchAniliberty: 'Смотреть на AniLiberty', episodeWatched: 'Серия просмотрена', episodeUpdating: 'Сохраняем…', episodeUpdateError: 'Не удалось обновить прогресс. Попробуйте ещё раз.',
     dashboardError: 'Не удалось загрузить список. Попробуйте ещё раз.', noWatching: 'В списке «смотрю» пока нет аниме.',
     presets: { classic: 'Классика', aurora: 'Аврора', glass: 'Стекло', neon: 'Неон', vhs: 'VHS', manga: 'Манга', mag: 'Журнал', polaroid: 'Полароид', print: 'Принт' },
   } : {
@@ -50,6 +51,7 @@
     myShikimori: 'My Shikimori', connectTitle: 'Connect Shikimori', connectText: 'Sign in to see your watching list and friends’ ratings.',
     connect: 'Sign in with Shikimori', configuredLater: 'Shikimori integration is not configured yet.', refresh: 'Refresh', logout: 'Disconnect',
     watching: 'Watching', progress: 'Progress', friends: 'friends', friendScores: 'Friends’ ratings', noFriendScores: 'No friends have rated it yet',
+    watchAniliberty: 'Watch on AniLiberty', episodeWatched: 'Episode watched', episodeUpdating: 'Saving…', episodeUpdateError: 'Could not update progress. Please try again.',
     dashboardError: 'Could not load your list. Please try again.', noWatching: 'There is nothing in your watching list yet.',
     presets: { classic: 'Classic', aurora: 'Aurora', glass: 'Glass', neon: 'Neon', vhs: 'VHS', manga: 'Manga', mag: 'Magazine', polaroid: 'Polaroid', print: 'Print' },
   };
@@ -110,6 +112,16 @@
   }
 
   function proxyUrl(url) { return `/api/image?url=${encodeURIComponent(url)}`; }
+  function useFallbackPoster(event, fallbackUrl) {
+    const image = event.currentTarget;
+    if (fallbackUrl && image.dataset.fallbackUsed !== 'true') {
+      image.dataset.fallbackUsed = 'true'; image.src = proxyUrl(fallbackUrl); return;
+    }
+    image.onerror = null; image.src = logoUrl; image.classList.add('poster-fallback');
+  }
+  function openExternal(event, url) {
+    if (inTelegram && tg?.openLink) { event.preventDefault(); tg.openLink(url); }
+  }
   function metaLine(anime) {
     return [anime.year, anime.kind && String(anime.kind).toUpperCase(), anime.episodes && `${anime.episodes} ${T.eps}`].filter(Boolean).join(' · ');
   }
@@ -137,6 +149,8 @@
     if (kind === 'account') return h('svg', { width: 19, height: 19, viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': true }, h('circle', { cx: 12, cy: 8, r: 3.2, stroke: 'currentColor', strokeWidth: 1.8 }), h('path', { d: 'M5 20c.7-3.4 3-5.2 7-5.2s6.3 1.8 7 5.2', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' }));
     if (kind === 'cards') return h('svg', { width: 19, height: 19, viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': true }, h('rect', { x: 4, y: 4, width: 16, height: 16, rx: 3, stroke: 'currentColor', strokeWidth: 1.8 }), h('path', { d: 'M8 9h8M8 14h5', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' }));
     if (kind === 'refresh') return h('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': true }, h('path', { d: 'M20 11a8 8 0 1 0 1 4', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' }), h('path', { d: 'M20 4v7h-7', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round' }));
+    if (kind === 'play') return h('svg', { width: 17, height: 17, viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': true }, h('path', { d: 'm9 7 8 5-8 5V7Z', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round' }));
+    if (kind === 'check') return h('svg', { width: 17, height: 17, viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': true }, h('path', { d: 'm5 12 4 4L19 6', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' }));
     return h('svg', { width: 20, height: 20, viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': true }, h('path', { d: 'm15 18-6-6 6-6', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' }));
   }
 
@@ -310,7 +324,7 @@
   }
 
   function MyScreen({ onBack, onPick, notify }) {
-    const [dashboard, setDashboard] = useState(null); const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [connecting, setConnecting] = useState(false);
+    const [dashboard, setDashboard] = useState(null); const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [connecting, setConnecting] = useState(false); const [updatingRateId, setUpdatingRateId] = useState(null);
     const load = useCallback(async (fresh = false) => {
       setLoading(true); setError('');
       try {
@@ -339,6 +353,18 @@
       try { await apiFetch('/api/shikimori/logout', { method: 'POST' }); setDashboard({ available: true, connected: false }); }
       catch (_) { notify(T.dashboardError); }
     };
+    const incrementEpisode = async (anime) => {
+      if (!anime.rate_id || updatingRateId !== null) return;
+      setUpdatingRateId(anime.rate_id);
+      try {
+        const response = await apiFetch(`/api/shikimori/rates/${anime.rate_id}/increment`, { method: 'POST' });
+        const data = await response.json();
+        if (!response.ok || !Number.isFinite(Number(data.progress))) throw new Error('progress update failed');
+        setDashboard((current) => ({ ...current, watching: current.watching.map((item) => item.id === anime.id ? { ...item, progress: Number(data.progress) } : item) }));
+        tg?.HapticFeedback?.notificationOccurred?.('success');
+      } catch (_) { notify(T.episodeUpdateError); }
+      finally { setUpdatingRateId(null); }
+    };
     const profile = dashboard?.profile;
     return h('main', { className: 'app-shell my-shell' }, [
       h('header', { className: 'app-header my-header', key: 'header' }, [
@@ -356,15 +382,23 @@
         h('h2', { className: 'section-title', key: 'heading' }, T.watching),
         dashboard.watching?.length ? h('div', { className: 'watch-list', key: 'list' }, dashboard.watching.map((anime) => {
           const total = Number(anime.episodes || 0); const progress = Number(anime.progress || 0); const percent = total ? Math.min(100, Math.round(progress / total * 100)) : 0;
-          return h('button', { className: 'watch-item', type: 'button', onClick: () => onPick(anime), key: anime.id }, h(Card, { variant: 'outlined' }, h('div', { className: 'watch-content' }, [
-            h('img', { className: 'result-poster', src: proxyUrl(anime.image_preview || anime.image_url), alt: anime.title || anime.name, key: 'poster' }),
-            h('div', { className: 'watch-copy', key: 'copy' }, [
-              h('p', { className: 'result-title', key: 'title' }, anime.title || anime.name),
-              h('p', { className: 'watch-progress', key: 'progress' }, `${T.progress}: ${progress}${total ? ` / ${total}` : ''}`),
-              total ? h('div', { className: 'progress-track', key: 'track', 'aria-label': `${T.progress}: ${percent}%` }, h('span', { style: { width: `${percent}%` } })) : null,
-              h('div', { className: 'rating-block', key: 'ratings' }, [h('span', { className: 'rating-label', key: 'label' }, T.friendScores), anime.friends?.length ? h('div', { className: 'friend-ratings', key: 'ratings' }, anime.friends.map((friend) => h('span', { className: 'friend-rating', key: friend.id, title: `${friend.nickname}: ${friend.score}` }, friend.avatar ? h('img', { src: proxyUrl(friend.avatar), alt: '' }) : null, h('span', null, friend.nickname), h('b', null, friend.score)))) : h('span', { className: 'no-ratings', key: 'empty' }, T.noFriendScores)]),
+          const atLastEpisode = Boolean(total && progress >= total);
+          const updating = updatingRateId === anime.rate_id;
+          return h('article', { className: 'watch-item', key: anime.id }, h(Card, { variant: 'outlined' }, [
+            h('button', { className: 'watch-open', type: 'button', onClick: () => onPick({ ...anime, image_url: anime.image_fallback_url || anime.image_url, image_preview: anime.image_fallback_url || anime.image_preview }), key: 'details', 'aria-label': anime.title || anime.name }, h('div', { className: 'watch-content' }, [
+              h('img', { className: 'result-poster', src: proxyUrl(anime.image_preview || anime.image_url), onError: (event) => useFallbackPoster(event, anime.image_fallback_url), alt: anime.title || anime.name, key: 'poster' }),
+              h('div', { className: 'watch-copy', key: 'copy' }, [
+                h('p', { className: 'result-title', key: 'title' }, anime.title || anime.name),
+                h('p', { className: 'watch-progress', key: 'progress', 'aria-live': 'polite' }, `${T.progress}: ${progress}${total ? ` / ${total}` : ''}`),
+                total ? h('div', { className: 'progress-track', key: 'track', 'aria-label': `${T.progress}: ${percent}%` }, h('span', { style: { width: `${percent}%` } })) : null,
+                h('div', { className: 'rating-block', key: 'ratings' }, [h('span', { className: 'rating-label', key: 'label' }, T.friendScores), anime.friends?.length ? h('div', { className: 'friend-ratings', key: 'ratings' }, anime.friends.map((friend) => h('span', { className: 'friend-rating', key: friend.id, title: `${friend.nickname}: ${friend.score}` }, friend.avatar ? h('img', { src: proxyUrl(friend.avatar), alt: '' }) : null, h('span', null, friend.nickname), h('b', null, friend.score)))) : h('span', { className: 'no-ratings', key: 'empty' }, T.noFriendScores)]),
+              ]),
+            ])),
+            h('div', { className: 'watch-actions', key: 'actions' }, [
+              anime.aniliberty_url ? h('a', { className: 'watch-action aniliberty-link', href: anime.aniliberty_url, target: '_blank', rel: 'noopener noreferrer', onClick: (event) => openExternal(event, anime.aniliberty_url), key: 'aniliberty' }, icon('play'), h('span', null, T.watchAniliberty)) : null,
+              h('button', { className: 'watch-action episode-action', type: 'button', disabled: !anime.rate_id || atLastEpisode || updating, onClick: () => incrementEpisode(anime), key: 'episode' }, icon('check'), h('span', null, updating ? T.episodeUpdating : T.episodeWatched)),
             ]),
-          ])));
+          ]));
         })) : h('div', { className: 'empty-state', key: 'empty' }, h('p', null, T.noWatching)),
       ]),
     ]);

@@ -29,6 +29,9 @@ class TTLCache[T]:
         while len(self._entries) > self._max_entries:
             self._entries.popitem(last=False)
 
+    def delete(self, key: str) -> None:
+        self._entries.pop(key, None)
+
 
 class SlidingWindowRateLimiter:
     """In-memory per-actor limit for expensive operations."""

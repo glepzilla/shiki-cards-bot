@@ -22,6 +22,7 @@ from app.main import (
     SlidingWindowRateLimiter,
     TTLCache,
     UpstreamSessions,
+    aniliberty_release_for_anime,
     apply_anilist_covers,
     cleanup_rendered_dir,
     collect_posters,
@@ -162,6 +163,81 @@ def test_shikimori_authorize_url_uses_registered_callback(tmp_path: Path) -> Non
     assert "client_id=client-id" in url
     assert "redirect_uri=https%3A%2F%2Fexample.test%2Foauth%2Fshikimori%2Fcallback" in url
     assert "state=safe-state" in url
+
+
+def test_aniliberty_release_matches_titles_and_exposes_a_safe_link() -> None:
+    anime = Anime(
+        id=57524,
+        name="Make Heroine ga Oosugiru!",
+        russian="Слишком много проигравших героинь!",
+        kind="tv",
+        score=None,
+        status="released",
+        image_url=None,
+        image_preview=None,
+        image_source="shikimori",
+        episodes=12,
+        year=2024,
+        genres=(),
+        source="shikimori",
+    )
+    release = aniliberty_release_for_anime(
+        anime,
+        [
+            {
+                "alias": "make-heroine-ga-oosugiru",
+                "year": 2024,
+                "name": {"main": "Слишком много проигравших героинь!"},
+                "poster": {"optimized": {"src": "/storage/poster.webp"}},
+            }
+        ],
+    )
+
+    assert release == {
+        "url": "https://www.aniliberty.top/anime/releases/release/make-heroine-ga-oosugiru",
+        "image_url": "https://api.anilibria.app/storage/poster.webp",
+    }
+
+
+def test_increment_episode_updates_shikimori_progress(tmp_path: Path) -> None:
+    async def check() -> None:
+        key = Fernet.generate_key().decode()
+        token_path = tmp_path / "tokens.enc"
+        ShikimoriTokenStore(token_path, key).put(
+            1, {"access_token": "token", "expires_at": int(time.time()) + 3600}
+        )
+        settings = make_settings(tmp_path).model_copy(
+            update={
+                "shikimori_client_id": "client-id",
+                "shikimori_client_secret": "client-secret",
+                "shikimori_token_key": key,
+                "shikimori_tokens_file": token_path,
+            }
+        )
+        async with ClientSession() as direct:
+            with patch("app.main.fetch_json", AsyncMock(return_value={"episodes": 4})) as mocked:
+                app = await create_web_app(
+                    settings, UpstreamSessions(direct), TTLCache(ttl=60), object()  # type: ignore[arg-type]
+                )
+                client = TestClient(TestServer(app))
+                await client.start_server()
+                try:
+                    response = await client.post(
+                        "/api/shikimori/rates/73/increment",
+                        headers={
+                            "X-Telegram-Init-Data": signed_init_data(
+                                "test-token", int(time.time())
+                            )
+                        },
+                    )
+                    assert await response.json() == {"ok": True, "progress": 4}
+                finally:
+                    await client.close()
+
+        assert mocked.await_args.kwargs["json_payload"] == {}
+        assert mocked.await_args.kwargs["extra_headers"] == {"Authorization": "Bearer token"}
+
+    asyncio.run(check())
 
 
 def test_telegram_main_webapp_url_uses_a_safe_bot_username() -> None:

@@ -49,6 +49,8 @@ from app.cache import SlidingWindowRateLimiter, Throttle, TTLCache
 
 SHIKIMORI_ORIGIN = "https://shikimori.io"
 ANILIST_API = "https://graphql.anilist.co"
+ANILIBERTY_API = "https://api.anilibria.app/api/v1"
+ANILIBERTY_ORIGIN = "https://www.aniliberty.top"
 TENRAI_API = "https://api.tenrai.org/v1"
 USER_AGENT = "shikizilla/0.2"
 UPSTREAM_REQUEST_TIMEOUT = 4.0
@@ -68,6 +70,7 @@ ALLOWED_IMAGE_HOSTS = {
     "shikimori.io",  # Older API payloads may still contain this host.
     "cdn.myanimelist.net",
     "s4.anilist.co",
+    "api.anilibria.app",
 }
 ALLOWED_LINK_HOSTS = {"shikimori.one", "shikimori.io"}
 # Direct access from the VPS to these image CDNs is unreliable.
@@ -332,6 +335,7 @@ THROTTLES = {
     "shikimori.io": Throttle(2 / 3),
     "api.tenrai.org": Throttle(0.5),
     "graphql.anilist.co": Throttle(0.35),
+    "api.anilibria.app": Throttle(0.25),
 }
 
 
@@ -703,6 +707,16 @@ async def fetch_anilist_covers(
     return covers
 
 
+async def fetch_optional_anilist_covers(
+    session: UpstreamSessions, anime_ids: list[int]
+) -> dict[int, tuple[str, str]]:
+    try:
+        return await fetch_anilist_covers(session, anime_ids)
+    except Exception:
+        logging.warning("AniList cover fallback fetch failed", exc_info=True)
+        return {}
+
+
 def apply_anilist_covers(animes: list[Anime], covers: dict[int, tuple[str, str]]) -> list[Anime]:
     """Use AniList artwork when available and preserve the original provider as fallback."""
     return [
@@ -805,6 +819,79 @@ def anime_payload(anime: Anime) -> dict[str, Any]:
         "source": anime.source,
         "page_url": anime.page_url,
     }
+
+
+def normalized_title(value: str | None) -> str:
+    """A conservative title key for matching provider search results."""
+    normalized = "".join(
+        character for character in (value or "").casefold() if character.isalnum()
+    )
+    return normalized.replace("ё", "е")
+
+
+def aniliberty_image_url(path: str | None) -> str | None:
+    if not path:
+        return None
+    if path.startswith("https://"):
+        return path
+    if path.startswith("//"):
+        return f"https:{path}"
+    return f"https://api.anilibria.app{path}"
+
+
+def aniliberty_release_for_anime(anime: Anime, releases: Any) -> dict[str, str] | None:
+    expected_titles = {normalized_title(anime.name), normalized_title(anime.russian)} - {""}
+    for raw_release in releases if isinstance(releases, list) else []:
+        release = as_mapping(raw_release)
+        names = as_mapping(release.get("name"))
+        actual_titles = {
+            normalized_title(as_text(names.get(field)))
+            for field in ("main", "english", "alternative")
+        } - {""}
+        if not expected_titles.intersection(actual_titles):
+            continue
+        release_year = as_int(release.get("year"))
+        if anime.year is not None and release_year is not None and anime.year != release_year:
+            continue
+        alias = as_text(release.get("alias"))
+        if not alias:
+            continue
+        poster = as_mapping(release.get("poster"))
+        optimized = as_mapping(poster.get("optimized"))
+        image_url = aniliberty_image_url(
+            as_text(optimized.get("src") or poster.get("src"))
+        )
+        result = {"url": f"{ANILIBERTY_ORIGIN}/anime/releases/release/{alias}"}
+        if image_url and allowed_image(image_url):
+            result["image_url"] = image_url
+        return result
+    return None
+
+
+async def fetch_aniliberty_release(
+    session: UpstreamSessions, anime: Anime
+) -> tuple[int, dict[str, str] | None]:
+    releases = await fetch_json(
+        session, f"{ANILIBERTY_API}/app/search/releases", params={"query": anime.name}
+    )
+    return anime.id, aniliberty_release_for_anime(anime, releases)
+
+
+async def fetch_aniliberty_releases(
+    session: UpstreamSessions, animes: list[Anime]
+) -> dict[int, dict[str, str]]:
+    results = await asyncio.gather(
+        *(fetch_aniliberty_release(session, anime) for anime in animes), return_exceptions=True
+    )
+    matches: dict[int, dict[str, str]] = {}
+    for result in results:
+        if isinstance(result, BaseException):
+            logging.warning("AniLiberty release search failed", exc_info=result)
+            continue
+        anime_id, release = result
+        if release:
+            matches[anime_id] = release
+    return matches
 
 
 def shikimori_profile_payload(raw: dict[str, Any]) -> dict[str, Any]:
@@ -927,22 +1014,51 @@ async def shikimori_dashboard(
         fetch_shikimori_friends(session, user_id, headers),
     )
     watching: list[dict[str, Any]] = []
+    watching_animes: list[Anime] = []
     for rate in watch_data if isinstance(watch_data, list) else []:
         rate_data = as_mapping(rate)
         anime_data = as_mapping(rate_data.get("anime"))
         if as_int(anime_data.get("id")) is None:
             continue
-        entry = anime_payload(Anime.from_shikimori(anime_data))
+        anime = Anime.from_shikimori(anime_data)
+        entry = anime_payload(anime)
+        entry["rate_id"] = as_int(rate_data.get("id"))
         entry["progress"] = as_int(rate_data.get("episodes")) or 0
         entry["friends"] = []
         watching.append(entry)
+        watching_animes.append(anime)
 
     watching_ids = {int(item["id"]) for item in watching}
-    friend_scores = (
-        await fetch_friend_scores(session, friends, watching_ids) if watching_ids else {}
+    friend_scores_task = (
+        fetch_friend_scores(session, friends, watching_ids)
+        if watching_ids
+        else asyncio.sleep(0, result={})
+    )
+    anilist_covers_task = (
+        fetch_optional_anilist_covers(session, list(watching_ids))
+        if watching_ids
+        else asyncio.sleep(0, result={})
+    )
+    aniliberty_releases_task = (
+        fetch_aniliberty_releases(session, watching_animes)
+        if watching_animes
+        else asyncio.sleep(0, result={})
+    )
+    friend_scores, anilist_covers, aniliberty_releases = await asyncio.gather(
+        friend_scores_task,
+        anilist_covers_task,
+        aniliberty_releases_task,
     )
     for item in watching:
         item["friends"] = friend_scores.get(int(item["id"]), [])
+        fallback_cover = anilist_covers.get(int(item["id"]))
+        if fallback_cover:
+            item["image_fallback_url"] = fallback_cover[1]
+        aniliberty_release = aniliberty_releases.get(int(item["id"]))
+        if aniliberty_release:
+            item["aniliberty_url"] = aniliberty_release["url"]
+            if not item.get("image_fallback_url") and aniliberty_release.get("image_url"):
+                item["image_fallback_url"] = aniliberty_release["image_url"]
     return {
         "available": True,
         "connected": True,
@@ -1406,6 +1522,42 @@ async def create_web_app(
         shikimori_cache.put(str(telegram_user_id), dashboard)
         return shikimori_json(dashboard)
 
+    async def shikimori_increment_episode_api(request: web.Request) -> web.Response:
+        telegram_user_id = require_telegram_user(request)
+        raw_rate_id = request.match_info["rate_id"]
+        if not raw_rate_id.isdigit() or int(raw_rate_id) <= 0:
+            raise web.HTTPNotFound()
+        if token_store is None:
+            return shikimori_json({"available": False, "connected": False}, status=503)
+        access_token = await user_access_token(telegram_user_id)
+        if not access_token:
+            return shikimori_json({"available": True, "connected": False}, status=401)
+        try:
+            updated_rate = as_mapping(
+                await fetch_json(
+                    session,
+                    f"{SHIKIMORI_ORIGIN}/api/v2/user_rates/{raw_rate_id}/increment",
+                    json_payload={},
+                    extra_headers=shikimori_auth_headers(access_token),
+                )
+            )
+        except ClientResponseError as exc:
+            if exc.status in (401, 403):
+                async with token_lock:
+                    token_store.delete(telegram_user_id)
+                return shikimori_json({"available": True, "connected": False}, status=401)
+            logging.warning("Shikimori episode increment failed", exc_info=True)
+            return shikimori_json({"error": "Could not update episode progress"}, status=502)
+        except Exception:
+            logging.warning("Shikimori episode increment failed", exc_info=True)
+            return shikimori_json({"error": "Could not update episode progress"}, status=502)
+        progress = as_int(updated_rate.get("episodes"))
+        if progress is None:
+            logging.warning("Shikimori increment returned no episode count")
+            return shikimori_json({"error": "Could not update episode progress"}, status=502)
+        shikimori_cache.delete(str(telegram_user_id))
+        return shikimori_json({"ok": True, "progress": progress})
+
     async def shikimori_logout_api(request: web.Request) -> web.Response:
         telegram_user_id = require_telegram_user(request)
         if token_store is not None:
@@ -1628,6 +1780,9 @@ async def create_web_app(
     app.router.add_static("/static/", WEBAPP_STATIC_DIR, name="static")
     app.router.add_post("/api/shikimori/authorize", shikimori_authorize_api)
     app.router.add_get("/api/shikimori/dashboard", shikimori_dashboard_api)
+    app.router.add_post(
+        "/api/shikimori/rates/{rate_id:[0-9]+}/increment", shikimori_increment_episode_api
+    )
     app.router.add_post("/api/shikimori/logout", shikimori_logout_api)
     app.router.add_get("/api/search", search_api)
     app.router.add_get("/api/trending", trending_api)
