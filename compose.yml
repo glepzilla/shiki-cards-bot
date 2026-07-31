@@ -1,15 +1,16 @@
 services:
   rendered-permissions:
-    image: ghcr.io/glepzilla/shiki-cards-bot:latest
+    image: ghcr.io/glepzilla/shiki-cards-bot:${IMAGE_TAG:-latest}
     user: "0:0"
     entrypoint: ["/bin/sh", "-c"]
-    command: ["mkdir -p /app/.cache/rendered && chown -R 10001:10001 /app/.cache/rendered"]
+    command: ["mkdir -p /app/.cache/rendered /app/.cache/shikimori && chown -R 10001:10001 /app/.cache/rendered /app/.cache/shikimori"]
     volumes:
       - rendered:/app/.cache/rendered
+      - shikimori-state:/app/.cache/shikimori
     restart: "no"
 
   bot:
-    image: ghcr.io/glepzilla/shiki-cards-bot:latest
+    image: ghcr.io/glepzilla/shiki-cards-bot:${IMAGE_TAG:-latest}
     restart: unless-stopped
     depends_on:
       rendered-permissions:
@@ -22,6 +23,7 @@ services:
       - host.docker.internal:host-gateway
     volumes:
       - rendered:/app/.cache/rendered
+      - shikimori-state:/app/.cache/shikimori
     networks: [proxy]
     healthcheck:
       test: ["CMD", "/app/.venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3).read()"]
@@ -37,6 +39,7 @@ services:
 
 volumes:
   rendered:
+  shikimori-state:
 
 networks:
   proxy:

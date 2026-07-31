@@ -69,13 +69,27 @@ jobs:
           name: deploy-files
           path: .
       - name: Decrypt secrets
-        run: sops -d secrets.enc.env > .env
+        run: |
+          sops -d secrets.enc.env > .env
+          python3 -c '
+          from pathlib import Path
+          values = dict(
+              line.split("=", 1)
+              for line in Path(".env").read_text().splitlines()
+              if "=" in line
+          )
+          required = ("SHIKIMORI_CLIENT_ID", "SHIKIMORI_CLIENT_SECRET", "SHIKIMORI_TOKEN_KEY")
+          missing = [key for key in required if not values.get(key)]
+          if missing:
+              raise SystemExit("Missing required Shikimori OAuth configuration")
+          '
         env:
           SOPS_AGE_KEY_FILE: /home/runner/.config/sops/age/keys.txt
       - name: Deploy
         run: |
+          export IMAGE_TAG="${GITHUB_SHA}"
           docker compose pull
-          docker compose up -d
+          docker compose up -d --force-recreate --remove-orphans
           docker image prune -f
       - name: Cleanup plaintext
         if: always()

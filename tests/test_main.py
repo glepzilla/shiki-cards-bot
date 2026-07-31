@@ -342,7 +342,9 @@ def test_webapp_rejects_unauthenticated_requests_and_upload_failures(tmp_path: P
             client = TestClient(TestServer(app))
             await client.start_server()
             try:
-                assert (await client.get("/healthz")).status == 200
+                health = await client.get("/healthz")
+                assert health.status == 200
+                assert await health.json() == {"ok": True, "shikimori_oauth_configured": False}
                 response = await client.get("/api/search?q=x")
                 assert response.status == 200
                 assert (await client.get("/static/ds/styles.css")).status == 200

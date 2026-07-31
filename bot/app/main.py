@@ -1329,7 +1329,9 @@ async def create_web_app(
         return telegram_main_webapp_url(username)
 
     async def healthz(_: web.Request) -> web.Response:
-        return web.json_response({"ok": True})
+        return web.json_response(
+            {"ok": True, "shikimori_oauth_configured": token_store is not None}
+        )
 
     async def shikimori_authorize_api(request: web.Request) -> web.Response:
         telegram_user_id = require_telegram_user(request)
