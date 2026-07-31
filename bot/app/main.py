@@ -915,6 +915,7 @@ async def shikimori_dashboard(
     for item in watching:
         item["friends"] = friend_scores.get(int(item["id"]), [])
     return {
+        "available": True,
         "connected": True,
         "profile": shikimori_profile_payload(profile),
         "watching": watching,

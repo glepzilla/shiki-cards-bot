@@ -31,6 +31,7 @@ from app.main import (
     fetch_tenrai_pictures,
     parse_card_query,
     shikimori_authorize_url,
+    shikimori_dashboard,
     telegram_main_webapp_url,
     validate_inline_session,
     validate_webapp_init_data,
@@ -102,6 +103,15 @@ def test_shikimori_token_store_encrypts_tokens_at_rest(tmp_path: Path) -> None:
     assert b"private-token" not in path.read_bytes()
     store.delete(42)
     assert store.get(42) is None
+
+
+def test_shikimori_dashboard_advertises_availability() -> None:
+    whoami = {"id": 1, "nickname": "gl_epka"}
+    with patch("app.main.fetch_json", new=AsyncMock(side_effect=[whoami, [], []])):
+        dashboard = asyncio.run(shikimori_dashboard(SimpleNamespace(), "token"))
+
+    assert dashboard["available"] is True
+    assert dashboard["connected"] is True
 
 
 def test_invalid_shikimori_token_key_disables_oauth_without_stopping_webapp(
