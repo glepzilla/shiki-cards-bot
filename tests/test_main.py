@@ -15,8 +15,10 @@ from app.main import (
     PROXIED_IMAGE_HOSTS,
     WEBAPP_ASSET_VERSION,
     Anime,
+    OAuthStateStore,
     PosterProviderResult,
     Settings,
+    ShikimoriTokenStore,
     SlidingWindowRateLimiter,
     TTLCache,
     UpstreamSessions,
@@ -25,13 +27,17 @@ from app.main import (
     collect_posters,
     create_inline_session,
     create_web_app,
+    fetch_friend_scores,
     fetch_tenrai_pictures,
     parse_card_query,
+    shikimori_authorize_url,
+    telegram_main_webapp_url,
     validate_inline_session,
     validate_webapp_init_data,
     webapp_url,
     webapp_user,
 )
+from cryptography.fernet import Fernet
 
 
 def make_settings(rendered_dir: Path, max_mb: int = 1) -> Settings:
@@ -76,6 +82,80 @@ def test_inline_session_rejects_tampering_and_expiry() -> None:
     assert validate_inline_session(token, "wrong-token", 60, now=1_060) is None
     assert validate_inline_session(f"43{token[2:]}", "test-token", 60, now=1_060) is None
     assert validate_inline_session(token, "test-token", 60, now=1_061) is None
+
+
+def test_shikimori_oauth_state_is_one_time_and_expires() -> None:
+    states = OAuthStateStore(ttl=60)
+    state = states.create(42, now=1_000)
+    assert states.consume(state, now=1_060) == 42
+    assert states.consume(state, now=1_060) is None
+    expired = states.create(43, now=1_000)
+    assert states.consume(expired, now=1_061) is None
+
+
+def test_shikimori_token_store_encrypts_tokens_at_rest(tmp_path: Path) -> None:
+    path = tmp_path / "tokens.enc"
+    store = ShikimoriTokenStore(path, Fernet.generate_key().decode())
+    store.put(42, {"access_token": "private-token", "expires_at": 9_999_999_999})
+
+    assert store.get(42) == {"access_token": "private-token", "expires_at": 9_999_999_999}
+    assert b"private-token" not in path.read_bytes()
+    store.delete(42)
+    assert store.get(42) is None
+
+
+def test_shikimori_authorize_url_uses_registered_callback(tmp_path: Path) -> None:
+    settings = Settings(
+        bot_token="test-token",
+        public_base_url="https://example.test",
+        storage_chat_id=-1001234567890,
+        rendered_dir=tmp_path,
+        shikimori_client_id="client-id",
+        shikimori_client_secret="client-secret",
+        shikimori_token_key=Fernet.generate_key().decode(),
+    )
+    url = shikimori_authorize_url(settings, "safe-state")
+    assert "client_id=client-id" in url
+    assert "redirect_uri=https%3A%2F%2Fexample.test%2Foauth%2Fshikimori%2Fcallback" in url
+    assert "state=safe-state" in url
+
+
+def test_telegram_main_webapp_url_uses_a_safe_bot_username() -> None:
+    assert telegram_main_webapp_url("@shikizilla_bot") == (
+        "https://t.me/shikizilla_bot?startapp=shikimori"
+    )
+    assert telegram_main_webapp_url("not a username!") is None
+
+
+def test_friend_scores_are_matched_to_the_watching_list() -> None:
+    async def check() -> None:
+        response = {
+            "data": {
+                "friend_7": [
+                    {"score": 9, "anime": {"id": "17"}},
+                    {"score": 0, "anime": {"id": "17"}},
+                    {"score": 10, "anime": {"id": "99"}},
+                ]
+            }
+        }
+        with patch("app.main.fetch_json", AsyncMock(return_value=response)):
+            ratings = await fetch_friend_scores(
+                object(),  # type: ignore[arg-type]
+                [{"id": 7, "nickname": "Mio", "avatar": "https://shikimori.io/mio.png"}],
+                {17},
+            )
+        assert ratings == {
+            17: [
+                {
+                    "id": 7,
+                    "nickname": "Mio",
+                    "avatar": "https://shikimori.io/mio.png",
+                    "score": 9,
+                }
+            ]
+        }
+
+    asyncio.run(check())
 
 
 def test_anime_from_shikimori_handles_dirty_optional_fields() -> None:

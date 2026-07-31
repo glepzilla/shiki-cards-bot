@@ -8,6 +8,7 @@ import html
 import json
 import logging
 import os
+import secrets
 import socket
 import time
 from dataclasses import dataclass, replace
@@ -41,6 +42,7 @@ from aiohttp import (
     TCPConnector,
     web,
 )
+from cryptography.fernet import Fernet, InvalidToken
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.cache import SlidingWindowRateLimiter, Throttle, TTLCache
@@ -53,6 +55,8 @@ UPSTREAM_REQUEST_TIMEOUT = 4.0
 INLINE_SEARCH_TIMEOUT = 8.0
 TENRAI_FETCH_TIMEOUT = 8.0
 TENRAI_GALLERY_TIMEOUT = 5.0
+SHIKIMORI_OAUTH_STATE_TTL = 10 * 60
+SHIKIMORI_FRIENDS_QUERY_CHUNK = 20
 MAX_RENDERED_IMAGE_BYTES = 5 * 1024 * 1024
 MAX_PROXY_IMAGE_BYTES = 5 * 1024 * 1024
 ALLOWED_IMAGE_HOSTS = {
@@ -96,6 +100,11 @@ class Settings(BaseSettings):
     storage_chat_id: int | str
     webapp_auth_max_age: int = 86_400
     proxy_url: str | None = None
+    shikimori_client_id: str | None = None
+    shikimori_client_secret: str | None = None
+    shikimori_token_key: str | None = None
+    shikimori_tokens_file: Path = Path(".cache/shikimori-tokens.enc")
+    bot_username: str | None = None
 
 
 def as_mapping(value: Any) -> dict[str, Any]:
@@ -114,6 +123,88 @@ def as_int(value: Any) -> int | None:
         return int(value) if value is not None and not isinstance(value, bool) else None
     except TypeError, ValueError:
         return None
+
+
+def shikimori_oauth_enabled(settings: Settings) -> bool:
+    """OAuth is opt-in: the card maker remains usable without app credentials."""
+    values = (
+        settings.shikimori_client_id,
+        settings.shikimori_client_secret,
+        settings.shikimori_token_key,
+    )
+    return all(values)
+
+
+class ShikimoriTokenStore:
+    """Small encrypted token vault keyed by Telegram user id."""
+
+    def __init__(self, path: Path, key: str) -> None:
+        self.path = path
+        self.cipher = Fernet(key.encode())
+
+    def _load(self) -> dict[str, dict[str, Any]]:
+        try:
+            decrypted = self.cipher.decrypt(self.path.read_bytes())
+            data = json.loads(decrypted)
+        except (OSError, InvalidToken, ValueError, TypeError):
+            return {}
+        if not isinstance(data, dict):
+            return {}
+        return {
+            str(user_id): as_mapping(token)
+            for user_id, token in data.items()
+            if as_mapping(token)
+        }
+
+    def get(self, telegram_user_id: int) -> dict[str, Any] | None:
+        token = self._load().get(str(telegram_user_id))
+        return token or None
+
+    def put(self, telegram_user_id: int, token: dict[str, Any]) -> None:
+        data = self._load()
+        data[str(telegram_user_id)] = token
+        self._save(data)
+
+    def delete(self, telegram_user_id: int) -> None:
+        data = self._load()
+        if str(telegram_user_id) not in data:
+            return
+        del data[str(telegram_user_id)]
+        self._save(data)
+
+    def _save(self, data: dict[str, dict[str, Any]]) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        temporary_path = self.path.with_suffix(f"{self.path.suffix}.tmp")
+        temporary_path.write_bytes(self.cipher.encrypt(json.dumps(data).encode()))
+        os.chmod(temporary_path, 0o600)
+        temporary_path.replace(self.path)
+
+
+class OAuthStateStore:
+    """One-time, short-lived OAuth states that bind a callback to a Telegram user."""
+
+    def __init__(self, ttl: int = SHIKIMORI_OAUTH_STATE_TTL) -> None:
+        self.ttl = ttl
+        self.states: dict[str, tuple[int, int]] = {}
+
+    def create(self, telegram_user_id: int, now: int | None = None) -> str:
+        self._prune(int(time.time()) if now is None else now)
+        state = secrets.token_urlsafe(32)
+        self.states[state] = (telegram_user_id, int(time.time()) if now is None else now)
+        return state
+
+    def consume(self, state: str, now: int | None = None) -> int | None:
+        current = int(time.time()) if now is None else now
+        self._prune(current)
+        item = self.states.pop(state, None)
+        if item is None or current - item[1] > self.ttl:
+            return None
+        return item[0]
+
+    def _prune(self, now: int) -> None:
+        self.states = {
+            state: item for state, item in self.states.items() if now - item[1] <= self.ttl
+        }
 
 
 def webapp_actor(init_data: str) -> str:
@@ -261,12 +352,16 @@ async def fetch_json(
     *,
     params: dict[str, str] | None = None,
     json_payload: dict[str, Any] | None = None,
+    form_payload: dict[str, str] | None = None,
+    extra_headers: dict[str, str] | None = None,
     force_direct: bool = False,
 ) -> Any:
     """GET/POST JSON with per-host throttling and one short retry for transient failures."""
+    if json_payload is not None and form_payload is not None:
+        raise ValueError("only one request body type is allowed")
     throttle = THROTTLES.get(urlparse(url).netloc)
-    headers = {"User-Agent": USER_AGENT}
-    method = "POST" if json_payload is not None else "GET"
+    headers = {"User-Agent": USER_AGENT, **(extra_headers or {})}
+    method = "POST" if json_payload is not None or form_payload is not None else "GET"
     request_options: dict[str, Any] = {"proxy": None} if force_direct else {}
     for attempt in (0, 1):
         if throttle:
@@ -277,6 +372,7 @@ async def fetch_json(
                 url,
                 params=params,
                 json=json_payload,
+                data=form_payload,
                 headers=headers,
                 timeout=ClientTimeout(total=UPSTREAM_REQUEST_TIMEOUT),
                 **request_options,
@@ -319,6 +415,128 @@ def absolute_url(path: str | None) -> str | None:
 def allowed_link(url: str) -> bool:
     parsed = urlparse(url)
     return parsed.scheme == "https" and parsed.netloc in ALLOWED_LINK_HOSTS
+
+
+def shikimori_callback_url(settings: Settings) -> str:
+    return f"{settings.public_base_url.rstrip('/')}/oauth/shikimori/callback"
+
+
+def telegram_main_webapp_url(bot_username: str) -> str | None:
+    username = bot_username.strip().lstrip("@")
+    if not username or not username.replace("_", "").isalnum():
+        return None
+    return f"https://t.me/{username}?startapp=shikimori"
+
+
+def oauth_callback_response(message: str, success: bool) -> web.Response:
+    title = "Shikimori подключён" if success else "Вход в Shikimori"
+    tone = "#4d7133" if success else "#9f3d37"
+    document = f"""<!doctype html>
+<html lang="ru"><meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>{html.escape(title)}</title><body style="margin:0;background:#eee8d7;color:#22301a">
+<main><div></div><h1>{html.escape(title)}</h1><p>{html.escape(message)}</p>
+<button onclick="window.close()">Закрыть</button></main>
+<style>
+body{{font:16px/1.5 system-ui,sans-serif}}
+main{{max-width:420px;margin:15vh auto;padding:28px;text-align:center}}
+main>div{{width:48px;height:48px;margin:auto;border-radius:50%;background:{tone}}}
+h1{{font:500 30px Georgia,serif}}
+button{{padding:12px 18px;border:0;border-radius:10px;background:#3f5330;color:#fff;font:inherit}}
+</style>
+</body></html>"""
+    return web.Response(
+        text=document, content_type="text/html", headers={"Cache-Control": "no-store"}
+    )
+
+
+def shikimori_authorize_url(settings: Settings, state: str) -> str:
+    if not shikimori_oauth_enabled(settings):
+        raise ValueError("Shikimori OAuth is not configured")
+    params = {
+        "client_id": settings.shikimori_client_id or "",
+        "redirect_uri": shikimori_callback_url(settings),
+        "response_type": "code",
+        "scope": "user_rates",
+        "state": state,
+    }
+    return f"{SHIKIMORI_ORIGIN}/oauth/authorize?{urlencode(params)}"
+
+
+def oauth_token_payload(raw: Any, old_token: dict[str, Any] | None = None) -> dict[str, Any]:
+    token = as_mapping(raw)
+    access_token = as_text(token.get("access_token"))
+    if not access_token:
+        raise ValueError("Shikimori did not return an access token")
+    refresh_token = as_text(token.get("refresh_token")) or as_text(
+        as_mapping(old_token).get("refresh_token")
+    )
+    expires_in = as_int(token.get("expires_in")) or 3600
+    result: dict[str, Any] = {
+        "access_token": access_token,
+        "expires_at": int(time.time()) + expires_in,
+    }
+    if refresh_token:
+        result["refresh_token"] = refresh_token
+    return result
+
+
+async def exchange_shikimori_code(
+    session: UpstreamSessions, settings: Settings, code: str
+) -> dict[str, Any]:
+    data = await fetch_json(
+        session,
+        f"{SHIKIMORI_ORIGIN}/oauth/token",
+        form_payload={
+            "grant_type": "authorization_code",
+            "client_id": settings.shikimori_client_id or "",
+            "client_secret": settings.shikimori_client_secret or "",
+            "code": code,
+            "redirect_uri": shikimori_callback_url(settings),
+        },
+    )
+    return oauth_token_payload(data)
+
+
+async def shikimori_access_token(
+    session: UpstreamSessions,
+    settings: Settings,
+    token_store: ShikimoriTokenStore,
+    telegram_user_id: int,
+) -> str | None:
+    stored = token_store.get(telegram_user_id)
+    if not stored:
+        return None
+    access_token = as_text(stored.get("access_token"))
+    expires_at = as_int(stored.get("expires_at")) or 0
+    if access_token and expires_at > int(time.time()) + 60:
+        return access_token
+
+    refresh_token = as_text(stored.get("refresh_token"))
+    if not refresh_token:
+        token_store.delete(telegram_user_id)
+        return None
+    try:
+        refreshed = await fetch_json(
+            session,
+            f"{SHIKIMORI_ORIGIN}/oauth/token",
+            form_payload={
+                "grant_type": "refresh_token",
+                "client_id": settings.shikimori_client_id or "",
+                "client_secret": settings.shikimori_client_secret or "",
+                "refresh_token": refresh_token,
+            },
+        )
+        token = oauth_token_payload(refreshed, stored)
+        token_store.put(telegram_user_id, token)
+        return as_text(token.get("access_token"))
+    except Exception:
+        logging.warning("Shikimori token refresh failed for Telegram user %s", telegram_user_id)
+        token_store.delete(telegram_user_id)
+        return None
+
+
+def shikimori_auth_headers(access_token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {access_token}"}
 
 
 async def search_shikimori(session: UpstreamSessions, query: str) -> list[Anime]:
@@ -576,6 +794,130 @@ def anime_payload(anime: Anime) -> dict[str, Any]:
         "genres": list(anime.genres),
         "source": anime.source,
         "page_url": anime.page_url,
+    }
+
+
+def shikimori_profile_payload(raw: dict[str, Any]) -> dict[str, Any]:
+    image = as_mapping(raw.get("image"))
+    return {
+        "id": as_int(raw.get("id")),
+        "nickname": as_text(raw.get("nickname")) or "Shikimori",
+        "avatar": absolute_url(
+            as_text(raw.get("avatar") or image.get("x80") or image.get("x48"))
+        ),
+        "url": as_text(raw.get("url")),
+    }
+
+
+async def fetch_shikimori_profile(
+    session: UpstreamSessions, access_token: str
+) -> dict[str, Any]:
+    profile = as_mapping(
+        await fetch_json(
+            session,
+            f"{SHIKIMORI_ORIGIN}/api/users/whoami",
+            extra_headers=shikimori_auth_headers(access_token),
+        )
+    )
+    if as_int(profile.get("id")) is None:
+        raise ValueError("Shikimori profile is unavailable")
+    return profile
+
+
+async def fetch_friend_scores(
+    session: UpstreamSessions, friends: list[dict[str, Any]], anime_ids: set[int]
+) -> dict[int, list[dict[str, Any]]]:
+    """Get friends' scored rates in batches, rather than one request per friend."""
+    scores: dict[int, list[dict[str, Any]]] = {anime_id: [] for anime_id in anime_ids}
+    valid_friends = [friend for friend in friends if as_int(friend.get("id")) is not None]
+    for offset in range(0, len(valid_friends), SHIKIMORI_FRIENDS_QUERY_CHUNK):
+        chunk = valid_friends[offset : offset + SHIKIMORI_FRIENDS_QUERY_CHUNK]
+        selections = []
+        for friend in chunk:
+            friend_id = as_int(friend.get("id"))
+            if friend_id is not None:
+                selections.append(
+                    f"friend_{friend_id}:userRates(userId:{friend_id},targetType:Anime,limit:500)"
+                    "{score anime{id}}"
+                )
+        if not selections:
+            continue
+        data = await fetch_json(
+            session,
+            f"{SHIKIMORI_ORIGIN}/api/graphql",
+            json_payload={"query": f"query{{{' '.join(selections)}}}"},
+        )
+        result = as_mapping(data).get("data")
+        for friend in chunk:
+            friend_id = as_int(friend.get("id"))
+            if friend_id is None:
+                continue
+            rates = as_mapping(result).get(f"friend_{friend_id}")
+            for rate in rates if isinstance(rates, list) else []:
+                rate_data = as_mapping(rate)
+                anime_id = as_int(as_mapping(rate_data.get("anime")).get("id"))
+                score = as_int(rate_data.get("score"))
+                if anime_id not in scores or score is None or score <= 0:
+                    continue
+                scores[anime_id].append(
+                    {
+                        "id": friend_id,
+                        "nickname": as_text(friend.get("nickname")) or "Shikimori",
+                        "avatar": absolute_url(as_text(friend.get("avatar"))),
+                        "score": score,
+                    }
+                )
+    for ratings in scores.values():
+        ratings.sort(key=lambda item: (-int(item["score"]), str(item["nickname"]).casefold()))
+    return scores
+
+
+async def shikimori_dashboard(
+    session: UpstreamSessions, access_token: str
+) -> dict[str, Any]:
+    profile = await fetch_shikimori_profile(session, access_token)
+    user_id = as_int(profile.get("id"))
+    if user_id is None:
+        raise ValueError("Shikimori profile has no id")
+    headers = shikimori_auth_headers(access_token)
+    watch_data, friends_data = await asyncio.gather(
+        fetch_json(
+            session,
+            f"{SHIKIMORI_ORIGIN}/api/users/{user_id}/anime_rates",
+            params={"status": "watching", "limit": "500"},
+            extra_headers=headers,
+        ),
+        fetch_json(
+            session,
+            f"{SHIKIMORI_ORIGIN}/api/users/{user_id}/friends",
+            extra_headers=headers,
+        ),
+    )
+    watching: list[dict[str, Any]] = []
+    for rate in watch_data if isinstance(watch_data, list) else []:
+        rate_data = as_mapping(rate)
+        anime_data = as_mapping(rate_data.get("anime"))
+        if as_int(anime_data.get("id")) is None:
+            continue
+        entry = anime_payload(Anime.from_shikimori(anime_data))
+        entry["progress"] = as_int(rate_data.get("episodes")) or 0
+        entry["friends"] = []
+        watching.append(entry)
+
+    friends = (
+        [as_mapping(friend) for friend in friends_data]
+        if isinstance(friends_data, list)
+        else []
+    )
+    watching_ids = {int(item["id"]) for item in watching}
+    friend_scores = await fetch_friend_scores(session, friends, watching_ids)
+    for item in watching:
+        item["friends"] = friend_scores.get(int(item["id"]), [])
+    return {
+        "connected": True,
+        "profile": shikimori_profile_payload(profile),
+        "watching": watching,
+        "friends_count": len(friends),
     }
 
 
@@ -923,8 +1265,17 @@ async def create_web_app(
     )
     poster_cache: TTLCache[dict[str, Any]] = TTLCache(ttl=3600)
     trending_cache: TTLCache[list[Anime]] = TTLCache(ttl=1800)
+    shikimori_cache: TTLCache[dict[str, Any]] = TTLCache(ttl=300)
     upload_limiter = SlidingWindowRateLimiter(settings.rendered_uploads_per_hour, 3600)
     rendered_lock = asyncio.Lock()
+    token_lock = asyncio.Lock()
+    oauth_states = OAuthStateStore()
+    token_store = (
+        ShikimoriTokenStore(settings.shikimori_tokens_file, settings.shikimori_token_key or "")
+        if shikimori_oauth_enabled(settings)
+        else None
+    )
+    bot_username = as_text(settings.bot_username)
 
     async def webapp_page(_: web.Request) -> web.Response:
         return web.Response(
@@ -948,8 +1299,109 @@ async def create_web_app(
             raise web.HTTPUnauthorized(text="valid Telegram WebApp session required")
         return webapp_actor(init_data), init_data, False
 
+    def require_telegram_user(request: web.Request) -> int:
+        actor, _, _ = require_webapp(request)
+        user_id = as_int(actor.removeprefix("user:")) if actor.startswith("user:") else None
+        if user_id is None or user_id <= 0:
+            raise web.HTTPUnauthorized(text="Telegram user required")
+        return user_id
+
+    async def user_access_token(telegram_user_id: int) -> str | None:
+        if token_store is None:
+            return None
+        async with token_lock:
+            return await shikimori_access_token(
+                session, settings, token_store, telegram_user_id
+            )
+
+    async def telegram_return_url() -> str | None:
+        nonlocal bot_username
+        username = bot_username
+        if username is None:
+            try:
+                username = as_text((await bot.me()).username)
+            except Exception:
+                logging.warning("Could not resolve the bot username for OAuth return")
+                return None
+            if username is None:
+                return None
+            bot_username = username
+        return telegram_main_webapp_url(username)
+
     async def healthz(_: web.Request) -> web.Response:
         return web.json_response({"ok": True})
+
+    async def shikimori_authorize_api(request: web.Request) -> web.Response:
+        telegram_user_id = require_telegram_user(request)
+        if token_store is None:
+            return web.json_response(
+                {"available": False, "error": "Shikimori OAuth is not configured"}, status=503
+            )
+        state = oauth_states.create(telegram_user_id)
+        return web.json_response(
+            {"available": True, "url": shikimori_authorize_url(settings, state)}
+        )
+
+    async def shikimori_dashboard_api(request: web.Request) -> web.Response:
+        telegram_user_id = require_telegram_user(request)
+        if token_store is None:
+            return web.json_response({"available": False, "connected": False})
+        access_token = await user_access_token(telegram_user_id)
+        if not access_token:
+            return web.json_response({"available": True, "connected": False})
+        cached = shikimori_cache.get(str(telegram_user_id))
+        if cached is not None and request.query.get("refresh") != "1":
+            return web.json_response(cached)
+        try:
+            dashboard = await shikimori_dashboard(session, access_token)
+        except ClientResponseError as exc:
+            if exc.status in (401, 403):
+                async with token_lock:
+                    token_store.delete(telegram_user_id)
+                return web.json_response({"available": True, "connected": False})
+            logging.warning("Shikimori dashboard request failed", exc_info=True)
+            return web.json_response({"error": "Shikimori is temporarily unavailable"}, status=502)
+        except Exception:
+            logging.warning("Shikimori dashboard request failed", exc_info=True)
+            return web.json_response({"error": "Shikimori is temporarily unavailable"}, status=502)
+        shikimori_cache.put(str(telegram_user_id), dashboard)
+        return web.json_response(dashboard)
+
+    async def shikimori_logout_api(request: web.Request) -> web.Response:
+        telegram_user_id = require_telegram_user(request)
+        if token_store is not None:
+            async with token_lock:
+                token_store.delete(telegram_user_id)
+        return web.json_response({"ok": True})
+
+    async def shikimori_callback(request: web.Request) -> web.Response:
+        error = as_text(request.query.get("error"))
+        state = request.query.get("state") or ""
+        code = request.query.get("code") or ""
+        if token_store is None:
+            return oauth_callback_response("Интеграция с Shikimori пока не настроена.", False)
+        telegram_user_id = oauth_states.consume(state)
+        if error:
+            return oauth_callback_response(
+                "Shikimori не подтвердил вход. Попробуйте ещё раз.", False
+            )
+        if telegram_user_id is None or not code:
+            return oauth_callback_response(
+                "Ссылка входа устарела. Вернитесь в бота и начните заново.", False
+            )
+        try:
+            token = await exchange_shikimori_code(session, settings, code)
+            async with token_lock:
+                token_store.put(telegram_user_id, token)
+        except Exception:
+            logging.warning("Shikimori OAuth callback failed", exc_info=True)
+            return oauth_callback_response("Не удалось завершить вход. Попробуйте ещё раз.", False)
+        return_url = await telegram_return_url()
+        if return_url:
+            raise web.HTTPFound(location=return_url)
+        return oauth_callback_response(
+            "Shikimori подключён. Вернитесь в бота и обновите экран «Моё».", True
+        )
 
     async def search_api(request: web.Request) -> web.Response:
         query = (request.query.get("q") or "").strip()
@@ -1133,7 +1585,11 @@ async def create_web_app(
 
     app.router.add_get("/healthz", healthz)
     app.router.add_get("/", webapp_page)
+    app.router.add_get("/oauth/shikimori/callback", shikimori_callback)
     app.router.add_static("/static/", WEBAPP_STATIC_DIR, name="static")
+    app.router.add_post("/api/shikimori/authorize", shikimori_authorize_api)
+    app.router.add_get("/api/shikimori/dashboard", shikimori_dashboard_api)
+    app.router.add_post("/api/shikimori/logout", shikimori_logout_api)
     app.router.add_get("/api/search", search_api)
     app.router.add_get("/api/trending", trending_api)
     app.router.add_get("/api/anime/{anime_id}/genres", genres_api)
