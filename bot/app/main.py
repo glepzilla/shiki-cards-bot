@@ -56,7 +56,11 @@ INLINE_SEARCH_TIMEOUT = 8.0
 TENRAI_FETCH_TIMEOUT = 8.0
 TENRAI_GALLERY_TIMEOUT = 5.0
 SHIKIMORI_OAUTH_STATE_TTL = 10 * 60
-SHIKIMORI_FRIENDS_QUERY_CHUNK = 20
+SHIKIMORI_FRIENDS_PAGE_SIZE = 100
+SHIKIMORI_FRIENDS_MAX_PAGES = 10
+# Two userRates aliases fit Shikimori's current GraphQL complexity limit.
+SHIKIMORI_FRIENDS_QUERY_CHUNK = 2
+SHIKIMORI_FRIENDS_RATES_LIMIT = 50
 MAX_RENDERED_IMAGE_BYTES = 5 * 1024 * 1024
 MAX_PROXY_IMAGE_BYTES = 5 * 1024 * 1024
 ALLOWED_IMAGE_HOSTS = {
@@ -392,7 +396,12 @@ async def fetch_json(
                     await asyncio.sleep(min(delay, 3.0))
                     continue
                 resp.raise_for_status()
-                return await resp.json()
+                data = await resp.json()
+                if urlparse(url).path.endswith("/graphql"):
+                    errors = as_mapping(data).get("errors")
+                    if errors:
+                        raise RuntimeError(f"GraphQL error from {url}: {errors}")
+                return data
         except ClientResponseError:
             raise
         except (ClientError, TimeoutError) as exc:
@@ -838,7 +847,8 @@ async def fetch_friend_scores(
             friend_id = as_int(friend.get("id"))
             if friend_id is not None:
                 selections.append(
-                    f"friend_{friend_id}:userRates(userId:{friend_id},targetType:Anime,limit:500)"
+                    f"friend_{friend_id}:userRates(userId:{friend_id},targetType:Anime,"
+                    f"limit:{SHIKIMORI_FRIENDS_RATES_LIMIT})"
                     "{score anime{id}}"
                 )
         if not selections:
@@ -873,6 +883,32 @@ async def fetch_friend_scores(
     return scores
 
 
+async def fetch_shikimori_friends(
+    session: UpstreamSessions, user_id: int, headers: dict[str, str]
+) -> list[dict[str, Any]]:
+    """Load every available page of mutual friends, with a bounded upper limit."""
+    friends: list[dict[str, Any]] = []
+    seen_ids: set[int] = set()
+    for page in range(1, SHIKIMORI_FRIENDS_MAX_PAGES + 1):
+        batch = await fetch_json(
+            session,
+            f"{SHIKIMORI_ORIGIN}/api/users/{user_id}/friends",
+            params={"limit": str(SHIKIMORI_FRIENDS_PAGE_SIZE), "page": str(page)},
+            extra_headers=headers,
+        )
+        if not isinstance(batch, list) or not batch:
+            break
+        for raw_friend in batch:
+            friend = as_mapping(raw_friend)
+            friend_id = as_int(friend.get("id"))
+            if friend_id is not None and friend_id not in seen_ids:
+                seen_ids.add(friend_id)
+                friends.append(friend)
+        if len(batch) < SHIKIMORI_FRIENDS_PAGE_SIZE:
+            break
+    return friends
+
+
 async def shikimori_dashboard(
     session: UpstreamSessions, access_token: str
 ) -> dict[str, Any]:
@@ -881,18 +917,14 @@ async def shikimori_dashboard(
     if user_id is None:
         raise ValueError("Shikimori profile has no id")
     headers = shikimori_auth_headers(access_token)
-    watch_data, friends_data = await asyncio.gather(
+    watch_data, friends = await asyncio.gather(
         fetch_json(
             session,
             f"{SHIKIMORI_ORIGIN}/api/users/{user_id}/anime_rates",
             params={"status": "watching", "limit": "500"},
             extra_headers=headers,
         ),
-        fetch_json(
-            session,
-            f"{SHIKIMORI_ORIGIN}/api/users/{user_id}/friends",
-            extra_headers=headers,
-        ),
+        fetch_shikimori_friends(session, user_id, headers),
     )
     watching: list[dict[str, Any]] = []
     for rate in watch_data if isinstance(watch_data, list) else []:
@@ -905,13 +937,10 @@ async def shikimori_dashboard(
         entry["friends"] = []
         watching.append(entry)
 
-    friends = (
-        [as_mapping(friend) for friend in friends_data]
-        if isinstance(friends_data, list)
-        else []
-    )
     watching_ids = {int(item["id"]) for item in watching}
-    friend_scores = await fetch_friend_scores(session, friends, watching_ids)
+    friend_scores = (
+        await fetch_friend_scores(session, friends, watching_ids) if watching_ids else {}
+    )
     for item in watching:
         item["friends"] = friend_scores.get(int(item["id"]), [])
     return {

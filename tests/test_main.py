@@ -28,6 +28,8 @@ from app.main import (
     create_inline_session,
     create_web_app,
     fetch_friend_scores,
+    fetch_json,
+    fetch_shikimori_friends,
     fetch_tenrai_pictures,
     parse_card_query,
     shikimori_authorize_url,
@@ -196,6 +198,78 @@ def test_friend_scores_are_matched_to_the_watching_list() -> None:
                 }
             ]
         }
+
+    asyncio.run(check())
+
+
+def test_friend_score_queries_stay_within_shikimori_complexity_limit() -> None:
+    async def check() -> None:
+        responses = [
+            {"data": {"friend_1": [], "friend_2": []}},
+            {"data": {"friend_3": []}},
+        ]
+        friends = [
+            {"id": friend_id, "nickname": f"friend-{friend_id}"}
+            for friend_id in range(1, 4)
+        ]
+        with patch("app.main.fetch_json", AsyncMock(side_effect=responses)) as mocked:
+            await fetch_friend_scores(object(), friends, {17})  # type: ignore[arg-type]
+
+        queries = [call.kwargs["json_payload"]["query"] for call in mocked.await_args_list]
+        assert len(queries) == 2
+        assert all(query.count(":userRates") <= 2 for query in queries)
+        assert all("limit:50" in query for query in queries)
+
+    asyncio.run(check())
+
+
+def test_shikimori_friends_are_loaded_from_all_pages() -> None:
+    async def check() -> None:
+        first_page = [{"id": index, "nickname": f"friend-{index}"} for index in range(1, 101)]
+        second_page = [{"id": 100, "nickname": "duplicate"}, {"id": 101, "nickname": "friend-101"}]
+        with patch(
+            "app.main.fetch_json", AsyncMock(side_effect=[first_page, second_page])
+        ) as mocked:
+            friends = await fetch_shikimori_friends(
+                object(), 42, {"Authorization": "Bearer token"}
+            )  # type: ignore[arg-type]
+
+        assert [friend["id"] for friend in friends] == list(range(1, 102))
+        assert mocked.await_args_list[0].kwargs["params"] == {"limit": "100", "page": "1"}
+        assert mocked.await_args_list[1].kwargs["params"] == {"limit": "100", "page": "2"}
+
+    asyncio.run(check())
+
+
+def test_fetch_json_raises_on_graphql_errors() -> None:
+    class Response:
+        status = 200
+        headers: dict[str, str] = {}
+
+        async def __aenter__(self) -> Response:
+            return self
+
+        async def __aexit__(self, *_: object) -> None:
+            return None
+
+        def raise_for_status(self) -> None:
+            return None
+
+        async def json(self) -> dict[str, object]:
+            return {"data": None, "errors": [{"message": "too complex"}]}
+
+    class Session:
+        def request(self, *_: object, **__: object) -> Response:
+            return Response()
+
+    async def check() -> None:
+        with patch("app.main.THROTTLES", {}):
+            try:
+                await fetch_json(Session(), "https://shikimori.io/api/graphql")  # type: ignore[arg-type]
+            except RuntimeError as error:
+                assert "too complex" in str(error)
+            else:
+                raise AssertionError("GraphQL errors must not be returned as data")
 
     asyncio.run(check())
 
