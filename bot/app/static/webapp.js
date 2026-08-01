@@ -287,7 +287,7 @@
     );
   }
 
-  function SearchScreen({ onPick, onOpenAccount }) {
+  function SearchScreen({ onPick }) {
     const [query, setQuery] = useState(() => new URLSearchParams(window.location.search).get('q') || '');
     const [results, setResults] = useState([]); const [trending, setTrending] = useState(null);
     const [loading, setLoading] = useState(false); const [error, setError] = useState('');
@@ -316,14 +316,14 @@
     const pick = useCallback((anime) => { storeHistory(query.trim()); onPick(anime); }, [query, onPick]);
     const activeItems = query.trim().length >= 2 ? results : trending || [];
     return h('main', { className: 'app-shell' },
-      h('header', { className: 'app-header' }, h('div', { className: 'brand-mark', 'aria-hidden': true }, h('img', { src: logoUrl, alt: '' })), h('div', { className: 'header-copy' }, h('span', { className: 'eyebrow' }, 'CARD STUDIO / 01'), h(Heading, { as: 'h1', size: 'lg' }, 'Shikizilla', h('span', { className: 'title-dot', 'aria-hidden': true }, '.')), h('p', null, T.tagline)), h(Button, { className: 'account-button', variant: 'outline', size: 'sm', type: 'button', onClick: onOpenAccount }, icon('account'), h('span', null, T.account))),
+      h('header', { className: 'app-header' }, h('div', { className: 'brand-mark', 'aria-hidden': true }, h('img', { src: logoUrl, alt: '' })), h('div', { className: 'header-copy' }, h('span', { className: 'eyebrow' }, 'CARD STUDIO / 01'), h(Heading, { as: 'h1', size: 'lg' }, 'Shikizilla', h('span', { className: 'title-dot', 'aria-hidden': true }, '.')), h('p', null, T.tagline))),
       h(Card, { className: 'search-panel', variant: 'elevated', padding: 'md' }, h('div', { className: `search-field${query ? ' has-clear' : ''}` }, h('span', { key: 'icon', className: 'search-icon', 'aria-hidden': true }, icon('search')), h(Input, { key: 'input', inputSize: 'lg', placeholder: T.placeholder, value: query, onChange: (event) => setQuery(event.target.value), 'aria-label': T.placeholder }), query && h(Button, { key: 'clear', className: 'clear-search', variant: 'ghost', size: 'sm', type: 'button', onClick: () => setQuery(''), 'aria-label': T.clear }, '×'))),
       !query && history.length ? h('section', null, h('h2', { className: 'section-title' }, T.recent), h('div', { className: 'history' }, history.map((item) => h(Button, { key: item, variant: 'outline', size: 'sm', type: 'button', onClick: () => setQuery(item) }, item)))) : null,
       h('section', null, h('h2', { className: 'section-title' }, query ? T.search : T.trending), loading || (!query && trending === null) ? h('div', { className: 'loading-row' }, h(Spinner, null)) : error ? h(Alert, { variant: 'danger' }, error) : query && !activeItems.length ? h('div', { className: 'empty-state' }, h(Heading, { as: 'h3', size: 'sm' }, T.noResults), h('p', null, T.empty)) : h('div', { className: 'result-list' }, activeItems.map((anime) => h(SearchResult, { key: `${anime.source}-${anime.id}`, anime, onPick: pick })))),
     );
   }
 
-  function MyScreen({ onBack, onPick, notify }) {
+  function MyScreen({ onPick, notify }) {
     const [dashboard, setDashboard] = useState(null); const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [connecting, setConnecting] = useState(false); const [updatingRateId, setUpdatingRateId] = useState(null);
     const load = useCallback(async (fresh = false) => {
       setLoading(true); setError('');
@@ -368,9 +368,8 @@
     const profile = dashboard?.profile;
     return h('main', { className: 'app-shell my-shell' }, [
       h('header', { className: 'app-header my-header', key: 'header' }, [
-        h('button', { className: 'brand-mark', key: 'mark', type: 'button', onClick: onBack, 'aria-label': T.cards }, h('img', { src: logoUrl, alt: '' })),
+        h('div', { className: 'brand-mark', key: 'mark', 'aria-hidden': true }, h('img', { src: logoUrl, alt: '' })),
         h('div', { className: 'header-copy', key: 'copy' }, [h('span', { className: 'eyebrow', key: 'eyebrow' }, 'SHIKIMORI / 02'), h(Heading, { as: 'h1', size: 'lg', key: 'title' }, T.myShikimori), h('p', { key: 'tagline' }, dashboard?.connected ? profile?.nickname : T.tagline)]),
-        h(Button, { className: 'account-button', variant: 'outline', size: 'sm', type: 'button', onClick: onBack, key: 'cards' }, icon('cards'), h('span', null, T.cards)),
       ]),
       loading ? h('div', { className: 'loading-row', key: 'loading' }, h(Spinner, null)) : error ? h(Alert, { variant: 'danger', key: 'error' }, [h('p', { key: 'copy' }, error), h(Button, { key: 'retry', type: 'button', size: 'sm', variant: 'outline', onClick: () => load(true) }, T.retry)]) : !dashboard?.available ? h(Card, { className: 'connect-card', variant: 'elevated', key: 'unavailable' }, [h(Heading, { as: 'h2', size: 'md', key: 'title' }, T.myShikimori), h('p', { key: 'copy' }, T.configuredLater)]) : !dashboard.connected ? h(Card, { className: 'connect-card', variant: 'elevated', key: 'connect' }, [h('span', { className: 'connect-symbol', key: 'symbol', 'aria-hidden': true }, icon('account')), h(Heading, { as: 'h2', size: 'md', key: 'title' }, T.connectTitle), h('p', { key: 'copy' }, T.connectText), h(Button, { className: 'primary-action', key: 'button', type: 'button', size: 'lg', loading: connecting, onClick: connect }, T.connect)]) : h('section', { className: 'dashboard-content', key: 'dashboard' }, [
         h('div', { className: 'profile-strip', key: 'profile' }, [
@@ -496,10 +495,37 @@
     ]);
   }
 
+  function BottomNavigation({ view, onChange }) {
+    const items = [
+      ['my', 'My', 'account'],
+      ['cards', 'Cards', 'cards'],
+    ];
+    return h('nav', { className: 'bottom-nav', 'aria-label': 'Main navigation' },
+      h('div', { className: 'bottom-nav-glow', 'aria-hidden': true }),
+      h('div', { className: 'bottom-nav-inner' }, items.map(([id, label, iconName]) => {
+        const active = view === id;
+        return h('button', {
+          key: id,
+          className: `bottom-nav-item${active ? ' is-active' : ''}`,
+          type: 'button',
+          onClick: () => onChange(id),
+          'aria-current': active ? 'page' : undefined,
+        }, [
+          h('span', { className: 'bottom-nav-icon', key: 'icon', 'aria-hidden': true }, icon(iconName)),
+          h('span', { className: 'bottom-nav-label', key: 'label' }, label),
+        ]);
+      })),
+    );
+  }
+
   function App() {
-    const [selected, setSelected] = useState(null); const [view, setView] = useState('cards'); const [toast, setToast] = useState('');
+    const [selected, setSelected] = useState(null); const [view, setView] = useState('my'); const [toast, setToast] = useState('');
     const notify = useCallback((message) => { setToast(message); window.setTimeout(() => setToast(''), 2800); }, []);
-    return h(window.React.Fragment, null, selected ? h(Editor, { anime: selected, onBack: () => setSelected(null), notify }) : view === 'account' ? h(MyScreen, { onBack: () => setView('cards'), onPick: setSelected, notify }) : h(SearchScreen, { onPick: setSelected, onOpenAccount: () => setView('account') }), toast ? h('div', { className: 'toast', role: 'status' }, toast) : null);
+    return h(window.React.Fragment, null, [
+      selected ? h(Editor, { anime: selected, onBack: () => setSelected(null), notify, key: 'editor' }) : view === 'my' ? h(MyScreen, { onPick: setSelected, notify, key: 'my' }) : h(SearchScreen, { onPick: setSelected, key: 'cards' }),
+      !selected ? h(BottomNavigation, { view, onChange: setView, key: 'navigation' }) : null,
+      toast ? h('div', { className: `toast${selected ? ' toast--editor' : ''}`, role: 'status', key: 'toast' }, toast) : null,
+    ]);
   }
 
   window.ReactDOM.createRoot(document.getElementById('ds-root')).render(h(App));

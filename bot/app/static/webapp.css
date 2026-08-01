@@ -103,8 +103,9 @@ button { cursor: pointer; }
   z-index: 1;
   width: min(100%, 800px);
   margin: 0 auto;
-  padding: max(24px, env(safe-area-inset-top)) 18px calc(34px + env(safe-area-inset-bottom));
+  padding: max(24px, env(safe-area-inset-top)) 18px calc(126px + env(safe-area-inset-bottom));
 }
+.editor-shell { padding-bottom: calc(34px + env(safe-area-inset-bottom)); }
 .app-header { display: flex; align-items: center; gap: 16px; margin: 5px 2px 30px; }
 .brand-mark {
   position: relative;
@@ -138,6 +139,69 @@ button { cursor: pointer; }
   font-weight: 700 !important;
 }
 .account-button:hover { border-color: var(--gz-moss) !important; background: var(--gz-moss-soft) !important; color: var(--gz-text) !important; }
+.bottom-nav {
+  position: fixed;
+  z-index: 40;
+  right: max(14px, env(safe-area-inset-right));
+  bottom: max(14px, env(safe-area-inset-bottom));
+  left: max(14px, env(safe-area-inset-left));
+  width: min(calc(100% - 28px), 420px);
+  margin: 0 auto;
+  padding: 5px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, white 48%, var(--gz-border));
+  border-radius: 28px;
+  background: color-mix(in srgb, var(--gz-surface-raised) 67%, transparent);
+  box-shadow: 0 18px 38px -18px color-mix(in srgb, var(--gz-bg-deep) 72%, transparent), inset 0 1px 0 rgba(255, 255, 255, .56);
+  -webkit-backdrop-filter: blur(24px) saturate(1.22);
+  backdrop-filter: blur(24px) saturate(1.22);
+}
+.bottom-nav::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(118deg, rgba(255, 255, 255, .4), transparent 34%, transparent 68%, color-mix(in srgb, var(--gz-moss) 13%, transparent));
+}
+.bottom-nav-glow {
+  position: absolute;
+  top: -28px;
+  left: 11%;
+  width: 44%;
+  height: 55px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--gz-moss) 28%, transparent);
+  filter: blur(22px);
+  opacity: .72;
+  pointer-events: none;
+}
+.bottom-nav-inner { position: relative; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+.bottom-nav-item {
+  display: inline-flex;
+  min-height: 54px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1px solid transparent;
+  border-radius: 22px;
+  background: transparent;
+  color: var(--gz-text-muted);
+  font: 700 .76rem/1 var(--gz-font-sans);
+  letter-spacing: .01em;
+  transition: color 220ms ease, background-color 260ms var(--gz-ease), border-color 260ms ease, box-shadow 260ms ease, transform 220ms var(--gz-ease);
+}
+.bottom-nav-item:hover { color: var(--gz-text); background: color-mix(in srgb, var(--gz-surface) 44%, transparent); }
+.bottom-nav-item:active { transform: scale(.97); }
+.bottom-nav-item.is-active {
+  border-color: color-mix(in srgb, white 48%, var(--gz-border-strong));
+  background: color-mix(in srgb, var(--gz-surface) 78%, transparent);
+  color: var(--gz-text);
+  box-shadow: 0 7px 20px -12px color-mix(in srgb, var(--gz-bg-deep) 62%, transparent), inset 0 1px 0 rgba(255, 255, 255, .58);
+}
+.bottom-nav-icon { display: grid; width: 22px; height: 22px; place-items: center; }
+.bottom-nav-icon svg { display: block; width: 20px; height: 20px; }
+.bottom-nav-item.is-active .bottom-nav-icon { color: var(--gz-moss-strong); }
 .eyebrow, .section-title {
   color: var(--gz-moss);
   font-family: var(--gz-font-mono);
@@ -377,7 +441,8 @@ button { cursor: pointer; }
 }
 .action-stack .primary-action:hover { background: var(--gz-moss) !important; transform: translateY(-2px); box-shadow: 0 19px 34px -18px color-mix(in srgb, var(--gz-moss) 85%, transparent) !important; }
 .action-stack .primary-action:active { transform: translateY(0); }
-.toast { position: fixed; z-index: 50; right: 16px; bottom: calc(18px + env(safe-area-inset-bottom)); max-width: calc(100% - 32px); padding: 12px 15px; border: 1px solid var(--gz-border-strong); border-radius: 12px; background: var(--gz-text); color: var(--gz-bg); font-size: .8rem; box-shadow: var(--gz-shadow-paper); }
+.toast { position: fixed; z-index: 50; right: 16px; bottom: calc(92px + env(safe-area-inset-bottom)); max-width: calc(100% - 32px); padding: 12px 15px; border: 1px solid var(--gz-border-strong); border-radius: 12px; background: var(--gz-text); color: var(--gz-bg); font-size: .8rem; box-shadow: var(--gz-shadow-paper); }
+.toast--editor { bottom: calc(18px + env(safe-area-inset-bottom)); }
 
 @keyframes dot-breathe { 0%, 100% { opacity: .7; scale: .9; } 50% { opacity: 1; scale: 1.08; } }
 @keyframes ligature-drift { 0%, 100% { translate: 0 0; rotate: 0deg; } 50% { translate: -8px 5px; rotate: -1deg; } }
