@@ -63,6 +63,10 @@ SHIKIMORI_FRIENDS_MAX_PAGES = 10
 # Two userRates aliases fit Shikimori's current GraphQL complexity limit.
 SHIKIMORI_FRIENDS_QUERY_CHUNK = 2
 SHIKIMORI_FRIENDS_RATES_LIMIT = 50
+# All current and planned write operations are user-rate operations.  Keep this
+# deliberately narrow: adding scopes later would require every user to sign in again.
+SHIKIMORI_OAUTH_SCOPE = "user_rates"
+SHIKIMORI_RATE_STATUSES = {"planned", "watching", "rewatching", "completed", "on_hold", "dropped"}
 MAX_RENDERED_IMAGE_BYTES = 5 * 1024 * 1024
 MAX_PROXY_IMAGE_BYTES = 5 * 1024 * 1024
 ALLOWED_IMAGE_HOSTS = {
@@ -84,9 +88,8 @@ WEBAPP_VERSIONED_ASSETS = (
     WEBAPP_STATIC_DIR / "shikizilla-logo.png",
     WEBAPP_STATIC_DIR / "webapp.css",
     WEBAPP_STATIC_DIR / "webapp.js",
-    WEBAPP_STATIC_DIR / "ds" / "_ds_bundle.css",
-    WEBAPP_STATIC_DIR / "ds" / "_ds_bundle.js",
-    WEBAPP_STATIC_DIR / "ds" / "_vendor" / "react.js",
+    WEBAPP_STATIC_DIR / "vendor" / "preact.min.js",
+    WEBAPP_STATIC_DIR / "vendor" / "preact-hooks.umd.js",
 )
 _webapp_asset_digest = hashlib.sha256()
 for _webapp_asset_path in WEBAPP_VERSIONED_ASSETS:
@@ -359,25 +362,27 @@ async def fetch_json(
     session: UpstreamSessions,
     url: str,
     *,
+    method: str | None = None,
     params: dict[str, str] | None = None,
     json_payload: dict[str, Any] | None = None,
     form_payload: dict[str, str] | None = None,
     extra_headers: dict[str, str] | None = None,
     force_direct: bool = False,
 ) -> Any:
-    """GET/POST JSON with per-host throttling and one short retry for transient failures."""
+    """JSON request with per-host throttling and one short transient retry."""
     if json_payload is not None and form_payload is not None:
         raise ValueError("only one request body type is allowed")
     throttle = THROTTLES.get(urlparse(url).netloc)
     headers = {"User-Agent": USER_AGENT, **(extra_headers or {})}
-    method = "POST" if json_payload is not None or form_payload is not None else "GET"
+    if method is None:
+        method = "POST" if json_payload is not None or form_payload is not None else "GET"
     request_options: dict[str, Any] = {"proxy": None} if force_direct else {}
     for attempt in (0, 1):
         if throttle:
             await throttle.wait()
         try:
             async with session.request(
-                method,
+                method.upper(),
                 url,
                 params=params,
                 json=json_payload,
@@ -400,6 +405,8 @@ async def fetch_json(
                     await asyncio.sleep(min(delay, 3.0))
                     continue
                 resp.raise_for_status()
+                if resp.status == 204:
+                    return {}
                 data = await resp.json()
                 if urlparse(url).path.endswith("/graphql"):
                     errors = as_mapping(data).get("errors")
@@ -470,7 +477,7 @@ def shikimori_authorize_url(settings: Settings, state: str) -> str:
         "client_id": settings.shikimori_client_id or "",
         "redirect_uri": shikimori_callback_url(settings),
         "response_type": "code",
-        "scope": "user_rates",
+        "scope": SHIKIMORI_OAUTH_SCOPE,
         "state": state,
     }
     return f"{SHIKIMORI_ORIGIN}/oauth/authorize?{urlencode(params)}"
@@ -581,6 +588,65 @@ async def fetch_shikimori_genres(session: UpstreamSessions, anime_id: int) -> li
         str(genre.get("russian") or genre.get("name") or "") for genre in data.get("genres") or []
     ]
     return [genre for genre in genres if genre][:4]
+
+
+async def fetch_shikimori_anime_details(
+    session: UpstreamSessions, anime_id: int, access_token: str | None = None
+) -> dict[str, Any]:
+    """Fetch the detail-screen payload in one GraphQL request.
+
+    The user rate is part of the same query, so opening a title never needs a
+    second request merely to learn whether it is already in the user's list.
+    """
+    headers = shikimori_auth_headers(access_token) if access_token else None
+    query = """
+      query {
+        animes(ids: \"$anime_id\", limit: 1) {
+          id name russian score status episodes duration rating
+          genres { id name russian kind }
+          studios { id name }
+          userRate { id status score episodes }
+        }
+      }
+    """.replace("$anime_id", str(anime_id))
+    response = as_mapping(
+        await fetch_json(
+            session,
+            f"{SHIKIMORI_ORIGIN}/api/graphql",
+            json_payload={"query": query},
+            extra_headers=headers,
+        )
+    )
+    animes = as_mapping(response.get("data")).get("animes")
+    raw = as_mapping(animes[0]) if isinstance(animes, list) and animes else {}
+    if as_int(raw.get("id")) != anime_id:
+        raise ValueError("Shikimori anime details are unavailable")
+    genres = [
+        as_text(as_mapping(genre).get("russian") or as_mapping(genre).get("name"))
+        for genre in raw.get("genres") or []
+    ]
+    studios = [as_text(as_mapping(studio).get("name")) for studio in raw.get("studios") or []]
+    rate = as_mapping(raw.get("userRate"))
+    return {
+        "id": anime_id,
+        "name": as_text(raw.get("name")) or "Untitled",
+        "title": as_text(raw.get("russian")) or as_text(raw.get("name")) or "Untitled",
+        "score": as_text(raw.get("score")),
+        "status": as_text(raw.get("status")),
+        "episodes": as_int(raw.get("episodes")),
+        "duration": as_int(raw.get("duration")),
+        "rating": as_text(raw.get("rating")),
+        "genres": [genre for genre in genres if genre],
+        "studios": [studio for studio in studios if studio],
+        "rate": {
+            "id": as_int(rate.get("id")),
+            "status": as_text(rate.get("status")),
+            "score": as_int(rate.get("score")) or 0,
+            "episodes": as_int(rate.get("episodes")) or 0,
+        }
+        if rate
+        else None,
+    }
 
 
 async def trending_anime(session: UpstreamSessions, cache: TTLCache[list[Anime]]) -> list[Anime]:
@@ -752,7 +818,12 @@ async def fetch_anilist_cover(
 
 def allowed_image(url: str) -> bool:
     parsed = urlparse(url)
-    return parsed.scheme == "https" and parsed.netloc in ALLOWED_IMAGE_HOSTS
+    host = parsed.hostname
+    return parsed.scheme == "https" and bool(host) and (
+        host in ALLOWED_IMAGE_HOSTS
+        or host.endswith(".shikimori.one")
+        or host.endswith(".shikimori.io")
+    )
 
 
 async def collect_posters(
@@ -1411,6 +1482,7 @@ async def create_web_app(
         "{{ASSET_VERSION}}", WEBAPP_ASSET_VERSION
     )
     poster_cache: TTLCache[dict[str, Any]] = TTLCache(ttl=3600)
+    anime_details_cache: TTLCache[dict[str, Any]] = TTLCache(ttl=6 * 60 * 60)
     trending_cache: TTLCache[list[Anime]] = TTLCache(ttl=1800)
     shikimori_cache: TTLCache[dict[str, Any]] = TTLCache(ttl=300)
     upload_limiter = SlidingWindowRateLimiter(settings.rendered_uploads_per_hour, 3600)
@@ -1555,8 +1627,136 @@ async def create_web_app(
         if progress is None:
             logging.warning("Shikimori increment returned no episode count")
             return shikimori_json({"error": "Could not update episode progress"}, status=502)
-        shikimori_cache.delete(str(telegram_user_id))
+        cached = shikimori_cache.get(str(telegram_user_id))
+        if cached is not None:
+            watching = [
+                {**item, "progress": progress} if item.get("rate_id") == int(raw_rate_id) else item
+                for item in cached.get("watching", [])
+            ]
+            shikimori_cache.put(str(telegram_user_id), {**cached, "watching": watching})
+        anime_details_cache.delete_prefix(f"{telegram_user_id}:")
         return shikimori_json({"ok": True, "progress": progress})
+
+    async def shikimori_anime_details_api(request: web.Request) -> web.Response:
+        raw_anime_id = request.match_info["anime_id"]
+        if not raw_anime_id.isdigit() or int(raw_anime_id) <= 0:
+            raise web.HTTPNotFound()
+        anime_id = int(raw_anime_id)
+        telegram_user_id = require_telegram_user(request)
+        if token_store is None:
+            return shikimori_json({"available": False, "connected": False}, status=503)
+        access_token = await user_access_token(telegram_user_id)
+        cache_key = f"{telegram_user_id}:{anime_id}"
+        cached = anime_details_cache.get(cache_key)
+        if cached is not None and request.query.get("refresh") != "1":
+            return shikimori_json(cached)
+        try:
+            details = await fetch_shikimori_anime_details(session, anime_id, access_token)
+        except ClientResponseError as exc:
+            if exc.status in (401, 403):
+                async with token_lock:
+                    token_store.delete(telegram_user_id)
+                return shikimori_json({"available": True, "connected": False}, status=401)
+            logging.warning("Shikimori details request failed", exc_info=True)
+            return shikimori_json({"error": "Shikimori is temporarily unavailable"}, status=502)
+        except Exception:
+            logging.warning("Shikimori details request failed", exc_info=True)
+            return shikimori_json({"error": "Shikimori is temporarily unavailable"}, status=502)
+        payload = {"available": True, "connected": True, **details}
+        anime_details_cache.put(cache_key, payload)
+        return shikimori_json(payload)
+
+    async def read_rate_update(request: web.Request) -> dict[str, Any]:
+        try:
+            payload = as_mapping(await request.json())
+        except (json.JSONDecodeError, web.HTTPBadRequest):
+            raise web.HTTPBadRequest(text="JSON body required") from None
+        update: dict[str, Any] = {}
+        status = as_text(payload.get("status"))
+        if status is not None:
+            if status not in SHIKIMORI_RATE_STATUSES:
+                raise web.HTTPBadRequest(text="invalid Shikimori rate status")
+            update["status"] = status
+        if "score" in payload:
+            score = as_int(payload.get("score"))
+            if score is None or not 0 <= score <= 10:
+                raise web.HTTPBadRequest(text="score must be between 0 and 10")
+            update["score"] = score
+        if not update:
+            raise web.HTTPBadRequest(text="a status or score is required")
+        return update
+
+    async def shikimori_rate_api(request: web.Request) -> web.Response:
+        telegram_user_id = require_telegram_user(request)
+        if token_store is None:
+            return shikimori_json({"available": False, "connected": False}, status=503)
+        access_token = await user_access_token(telegram_user_id)
+        if not access_token:
+            return shikimori_json({"available": True, "connected": False}, status=401)
+        method = request.method
+        raw_rate_id = request.match_info.get("rate_id", "")
+        raw_anime_id = request.match_info.get("anime_id", "")
+        try:
+            if method == "POST":
+                if not raw_anime_id.isdigit() or int(raw_anime_id) <= 0:
+                    raise web.HTTPNotFound()
+                update = await read_rate_update(request)
+                body = {
+                    "user_rate": {
+                        "target_id": int(raw_anime_id),
+                        "target_type": "Anime",
+                        **update,
+                    }
+                }
+                upstream_url = f"{SHIKIMORI_ORIGIN}/api/v2/user_rates"
+                upstream_method = "POST"
+            else:
+                if not raw_rate_id.isdigit() or int(raw_rate_id) <= 0:
+                    raise web.HTTPNotFound()
+                upstream_url = f"{SHIKIMORI_ORIGIN}/api/v2/user_rates/{raw_rate_id}"
+                upstream_method = method
+                body = {"user_rate": await read_rate_update(request)} if method == "PATCH" else None
+            updated = as_mapping(
+                await fetch_json(
+                    session,
+                    upstream_url,
+                    method=upstream_method,
+                    json_payload=body,
+                    extra_headers=shikimori_auth_headers(access_token),
+                )
+            ) if method != "DELETE" else as_mapping(
+                await fetch_json(
+                    session,
+                    upstream_url,
+                    method="DELETE",
+                    extra_headers=shikimori_auth_headers(access_token),
+                )
+            )
+        except ClientResponseError as exc:
+            if exc.status in (401, 403):
+                async with token_lock:
+                    token_store.delete(telegram_user_id)
+                return shikimori_json({"available": True, "connected": False}, status=401)
+            logging.warning("Shikimori rate update failed", exc_info=True)
+            return shikimori_json({"error": "Could not update your list"}, status=502)
+        except web.HTTPException:
+            raise
+        except Exception:
+            logging.warning("Shikimori rate update failed", exc_info=True)
+            return shikimori_json({"error": "Could not update your list"}, status=502)
+        shikimori_cache.delete(str(telegram_user_id))
+        anime_details_cache.delete_prefix(f"{telegram_user_id}:")
+        return shikimori_json(
+            {
+                "ok": True,
+                "rate": None if method == "DELETE" else {
+                    "id": as_int(updated.get("id")),
+                    "status": as_text(updated.get("status")),
+                    "score": as_int(updated.get("score")) or 0,
+                    "episodes": as_int(updated.get("episodes")) or 0,
+                },
+            }
+        )
 
     async def shikimori_logout_api(request: web.Request) -> web.Response:
         telegram_user_id = require_telegram_user(request)
@@ -1636,7 +1836,7 @@ async def create_web_app(
     async def image_proxy(request: web.Request) -> web.Response:
         url = request.query.get("url") or ""
         parsed = urlparse(url)
-        if parsed.scheme != "https" or parsed.netloc not in ALLOWED_IMAGE_HOSTS:
+        if not allowed_image(url):
             return web.Response(status=400, text="image host not allowed")
         request_options: dict[str, Any] = {
             "headers": {"User-Agent": USER_AGENT},
@@ -1780,6 +1980,10 @@ async def create_web_app(
     app.router.add_static("/static/", WEBAPP_STATIC_DIR, name="static")
     app.router.add_post("/api/shikimori/authorize", shikimori_authorize_api)
     app.router.add_get("/api/shikimori/dashboard", shikimori_dashboard_api)
+    app.router.add_get("/api/shikimori/animes/{anime_id:[0-9]+}", shikimori_anime_details_api)
+    app.router.add_post("/api/shikimori/animes/{anime_id:[0-9]+}/rate", shikimori_rate_api)
+    app.router.add_patch("/api/shikimori/rates/{rate_id:[0-9]+}", shikimori_rate_api)
+    app.router.add_delete("/api/shikimori/rates/{rate_id:[0-9]+}", shikimori_rate_api)
     app.router.add_post(
         "/api/shikimori/rates/{rate_id:[0-9]+}/increment", shikimori_increment_episode_api
     )

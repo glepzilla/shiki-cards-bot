@@ -32,6 +32,12 @@ class TTLCache[T]:
     def delete(self, key: str) -> None:
         self._entries.pop(key, None)
 
+    def delete_prefix(self, prefix: str) -> None:
+        """Invalidate one logical cache namespace without flushing unrelated users."""
+        for key in tuple(self._entries):
+            if key.startswith(prefix):
+                del self._entries[key]
+
 
 class SlidingWindowRateLimiter:
     """In-memory per-actor limit for expensive operations."""

@@ -30,6 +30,7 @@ from app.main import (
     create_web_app,
     fetch_friend_scores,
     fetch_json,
+    fetch_shikimori_anime_details,
     fetch_shikimori_friends,
     fetch_tenrai_pictures,
     parse_card_query,
@@ -350,6 +351,73 @@ def test_fetch_json_raises_on_graphql_errors() -> None:
     asyncio.run(check())
 
 
+def test_fetch_json_allows_an_explicit_patch_method() -> None:
+    class Response:
+        status = 200
+        headers: dict[str, str] = {}
+
+        async def __aenter__(self) -> Response:
+            return self
+
+        async def __aexit__(self, *_: object) -> None:
+            return None
+
+        def raise_for_status(self) -> None:
+            return None
+
+        async def json(self) -> dict[str, bool]:
+            return {"ok": True}
+
+    class Session:
+        def __init__(self) -> None:
+            self.methods: list[str] = []
+
+        def request(self, method: str, *_: object, **__: object) -> Response:
+            self.methods.append(method)
+            return Response()
+
+    async def check() -> None:
+        session = Session()
+        with patch("app.main.THROTTLES", {}):
+            assert await fetch_json(  # type: ignore[arg-type]
+                session, "https://shikimori.io/api/v2/user_rates/1", method="PATCH", json_payload={}
+            ) == {"ok": True}
+        assert session.methods == ["PATCH"]
+
+    asyncio.run(check())
+
+
+def test_anime_details_include_current_user_rate_in_the_graphql_query() -> None:
+    async def check() -> None:
+        response = {
+            "data": {
+                "animes": [
+                    {
+                        "id": 17,
+                        "name": "Original",
+                        "russian": "Русское",
+                        "score": "8.4",
+                        "status": "released",
+                        "episodes": 12,
+                        "duration": 24,
+                        "rating": "PG-13",
+                        "genres": [{"name": "Drama", "russian": "Драма"}],
+                        "studios": [{"name": "Bones"}],
+                        "userRate": {"id": 73, "status": "watching", "score": 9, "episodes": 4},
+                    }
+                ]
+            }
+        }
+        with patch("app.main.fetch_json", AsyncMock(return_value=response)) as mocked:
+            details = await fetch_shikimori_anime_details(object(), 17, "token")  # type: ignore[arg-type]
+        assert details["genres"] == ["Драма"]
+        assert details["rate"] == {"id": 73, "status": "watching", "score": 9, "episodes": 4}
+        assert "userRate" in mocked.await_args.kwargs["json_payload"]["query"]
+        assert mocked.await_args.kwargs["extra_headers"] == {"Authorization": "Bearer token"}
+
+    asyncio.run(check())
+
+
 def test_anime_from_shikimori_handles_dirty_optional_fields() -> None:
     anime = Anime.from_shikimori(
         {
@@ -496,6 +564,17 @@ def test_ttl_cache_expires_and_evicts_oldest() -> None:
     assert expired.get("key") is None
 
 
+def test_ttl_cache_invalidates_only_the_requested_namespace() -> None:
+    cache: TTLCache[str] = TTLCache(ttl=60)
+    cache.put("1:anime-17", "first")
+    cache.put("1:anime-73", "second")
+    cache.put("2:anime-17", "other-user")
+    cache.delete_prefix("1:")
+    assert cache.get("1:anime-17") is None
+    assert cache.get("1:anime-73") is None
+    assert cache.get("2:anime-17") == "other-user"
+
+
 def test_upload_rate_limiter_rejects_excess_requests() -> None:
     limiter = SlidingWindowRateLimiter(limit=2, window=60)
     assert limiter.allow("user:1")
@@ -554,7 +633,11 @@ def test_webapp_rejects_unauthenticated_requests_and_upload_failures(tmp_path: P
                 assert webapp.status == 200
                 html = await webapp.text()
                 assert webapp.headers["Cache-Control"] == "no-store"
-                assert "/static/ds/_ds_bundle.js?v=" in html
+                assert "/static/ds/_ds_bundle.js?v=" not in html
+                assert "/static/ds/_ds_bundle.css?v=" not in html
+                assert "fonts.googleapis.com" not in html
+                assert "/static/vendor/preact.min.js?v=" in html
+                assert "/static/vendor/preact-hooks.umd.js?v=" in html
                 assert "/static/webapp.css?v=" in html
                 assert "/static/webapp.js?v=" in html
                 assert "{{ASSET_VERSION}}" not in html
