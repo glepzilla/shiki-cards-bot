@@ -819,7 +819,9 @@ async def fetch_anilist_cover(
 def allowed_image(url: str) -> bool:
     parsed = urlparse(url)
     host = parsed.hostname
-    return parsed.scheme == "https" and bool(host) and (
+    if parsed.scheme != "https" or host is None:
+        return False
+    return (
         host in ALLOWED_IMAGE_HOSTS
         or host.endswith(".shikimori.one")
         or host.endswith(".shikimori.io")
@@ -1696,6 +1698,7 @@ async def create_web_app(
         method = request.method
         raw_rate_id = request.match_info.get("rate_id", "")
         raw_anime_id = request.match_info.get("anime_id", "")
+        body: dict[str, dict[str, Any]] | None
         try:
             if method == "POST":
                 if not raw_anime_id.isdigit() or int(raw_anime_id) <= 0:
