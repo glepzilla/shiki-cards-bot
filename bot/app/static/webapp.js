@@ -21,7 +21,8 @@
   const langCode = (tg?.initDataUnsafe?.user?.language_code || navigator.language || 'ru').toLowerCase();
   const RU = langCode.startsWith('ru');
   const T = RU ? {
-    tagline: 'Конструктор аниме-карточек', placeholder: 'Найти аниме', search: 'Результаты', account: 'Моё', cards: 'Карточки', loading: 'Загрузка', navigation: 'Основная навигация',
+    tagline: 'Аниме, списки и карточки', placeholder: 'Найти аниме', search: 'Результаты', discover: 'Обзор', library: 'Список', account: 'Профиль', cards: 'Карточки', loading: 'Загрузка', navigation: 'Основная навигация',
+    discoverTagline: 'Следите за аниме и открывайте новое', libraryTagline: 'Вся ваша библиотека Shikimori', cardsTagline: 'Создайте карточку из любого аниме', profileTagline: 'Аккаунт и статистика',
     recent: 'Недавние', trending: 'Популярное', noResults: 'Ничего не найдено',
     searchError: 'Поиск временно недоступен', retry: 'Повторить', back: 'К поиску', clear: 'Очистить поиск',
     poster: 'Постер', style: 'Стиль карточки', title: 'Название', elements: 'Элементы',
@@ -33,13 +34,15 @@
     tenraiUnavailable: 'Часть постеров сейчас недоступна.',
     myShikimori: 'Мой Shikimori', connectTitle: 'Подключите Shikimori', connectText: 'Ваш список, прогресс и оценки друзей — в одном месте.',
     connect: 'Подключить Shikimori', configuredLater: 'Shikimori пока недоступен.', refresh: 'Обновить', logout: 'Выйти',
-    watching: 'Смотрю', progress: 'Серии', friends: 'друзей', friendScores: 'Друзья', noFriendScores: 'Нет оценок',
+    watching: 'Смотрю', rewatching: 'Пересматриваю', planned: 'Запланировано', completed: 'Просмотрено', onHold: 'Отложено', dropped: 'Брошено', progress: 'Серии', friends: 'Друзья', friendScores: 'Друзья', noFriendScores: 'Нет оценок',
     watchAniliberty: 'Смотреть', episodeWatched: 'Отметить серию', episodeUpdating: 'Сохраняем…', episodeUpdateError: 'Не удалось обновить прогресс. Попробуйте ещё раз.',
-    dashboardError: 'Не удалось загрузить список. Попробуйте ещё раз.', noWatching: 'В списке «смотрю» пока нет аниме.',
+    dashboardError: 'Не удалось загрузить список. Попробуйте ещё раз.', noWatching: 'В этом разделе пока ничего нет.', connectHint: 'Подключите Shikimori в профиле, чтобы управлять списком.',
+    totalTitles: 'Всего', scoredTitles: 'С оценкой', watchedEpisodes: 'Серий', openProfile: 'Открыть Shikimori', libraryScore: 'Ваша оценка',
     details: 'Об аниме', addPlanned: 'Запланировать', addWatching: 'Смотрю', changeStatus: 'Статус', removeFromList: 'Убрать из списка', save: 'Сохранить', saving: 'Сохраняем…', rateScore: 'Моя оценка', noScore: 'Без оценки', studios: 'Студия', runtime: 'мин. на серию', adult: 'Возрастной рейтинг', editCard: 'Сделать карточку', rateUpdateError: 'Не удалось сохранить изменения. Попробуйте ещё раз.',
     presets: { classic: 'Классика', aurora: 'Аврора', glass: 'Стекло', neon: 'Неон', vhs: 'VHS', manga: 'Манга', mag: 'Журнал', polaroid: 'Полароид', print: 'Принт' },
   } : {
-    tagline: 'Anime card maker', placeholder: 'Find anime', search: 'Results', account: 'My', cards: 'Cards', loading: 'Loading', navigation: 'Main navigation',
+    tagline: 'Anime, lists, and cards', placeholder: 'Find anime', search: 'Results', discover: 'Discover', library: 'Library', account: 'Profile', cards: 'Cards', loading: 'Loading', navigation: 'Main navigation',
+    discoverTagline: 'Track anime and discover something new', libraryTagline: 'Your complete Shikimori library', cardsTagline: 'Create a card from any anime', profileTagline: 'Account and stats',
     recent: 'Recent', trending: 'Popular', noResults: 'Nothing found',
     searchError: 'Search is temporarily unavailable', retry: 'Retry', back: 'Back to search', clear: 'Clear search',
     poster: 'Poster', style: 'Card style', title: 'Title', elements: 'Elements',
@@ -51,9 +54,10 @@
     tenraiUnavailable: 'Some posters are currently unavailable.',
     myShikimori: 'My Shikimori', connectTitle: 'Connect Shikimori', connectText: 'Your list, progress, and friends’ ratings in one place.',
     connect: 'Connect Shikimori', configuredLater: 'Shikimori is unavailable.', refresh: 'Refresh', logout: 'Sign out',
-    watching: 'Watching', progress: 'Episodes', friends: 'friends', friendScores: 'Friends', noFriendScores: 'No ratings',
+    watching: 'Watching', rewatching: 'Rewatching', planned: 'Planned', completed: 'Completed', onHold: 'On hold', dropped: 'Dropped', progress: 'Episodes', friends: 'Friends', friendScores: 'Friends', noFriendScores: 'No ratings',
     watchAniliberty: 'Watch', episodeWatched: 'Mark episode', episodeUpdating: 'Saving…', episodeUpdateError: 'Could not update progress. Please try again.',
-    dashboardError: 'Could not load your list. Please try again.', noWatching: 'There is nothing in your watching list yet.',
+    dashboardError: 'Could not load your list. Please try again.', noWatching: 'There is nothing here yet.', connectHint: 'Connect Shikimori in Profile to manage your list.',
+    totalTitles: 'Total', scoredTitles: 'Rated', watchedEpisodes: 'Episodes', openProfile: 'Open Shikimori', libraryScore: 'Your score',
     details: 'About this anime', addPlanned: 'Plan to watch', addWatching: 'Watching', changeStatus: 'Status', removeFromList: 'Remove from list', save: 'Save', saving: 'Saving…', rateScore: 'My rating', noScore: 'No score', studios: 'Studio', runtime: 'min. per episode', adult: 'Age rating', editCard: 'Make a card', rateUpdateError: 'Could not save changes. Please try again.',
     presets: { classic: 'Classic', aurora: 'Aurora', glass: 'Glass', neon: 'Neon', vhs: 'VHS', manga: 'Manga', mag: 'Magazine', polaroid: 'Polaroid', print: 'Print' },
   };
@@ -167,6 +171,8 @@
     if (kind === 'search') return h('svg', { width: 17, height: 17, viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': true }, h('circle', { cx: 11, cy: 11, r: 6, stroke: 'currentColor', strokeWidth: 2 }), h('path', { d: 'm16 16 4 4', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' }));
     if (kind === 'account') return h('svg', { width: 19, height: 19, viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': true }, h('circle', { cx: 12, cy: 8, r: 3.2, stroke: 'currentColor', strokeWidth: 1.8 }), h('path', { d: 'M5 20c.7-3.4 3-5.2 7-5.2s6.3 1.8 7 5.2', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' }));
     if (kind === 'cards') return h('svg', { width: 19, height: 19, viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': true }, h('rect', { x: 4, y: 4, width: 16, height: 16, rx: 3, stroke: 'currentColor', strokeWidth: 1.8 }), h('path', { d: 'M8 9h8M8 14h5', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' }));
+    if (kind === 'home') return h('svg', { width: 19, height: 19, viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': true }, [h('path', { key: 'roof', d: 'm4 11 8-7 8 7', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round' }), h('path', { key: 'body', d: 'M6.5 9.5V20h11V9.5M10 20v-6h4v6', stroke: 'currentColor', strokeWidth: 1.8, strokeLinejoin: 'round' })]);
+    if (kind === 'library') return h('svg', { width: 19, height: 19, viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': true }, [h('rect', { key: 'one', x: 4, y: 5, width: 4, height: 14, rx: 1, stroke: 'currentColor', strokeWidth: 1.8 }), h('rect', { key: 'two', x: 10, y: 5, width: 4, height: 14, rx: 1, stroke: 'currentColor', strokeWidth: 1.8 }), h('path', { key: 'three', d: 'm17 6 3 12', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' })]);
     if (kind === 'refresh') return h('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': true }, h('path', { d: 'M20 11a8 8 0 1 0 1 4', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' }), h('path', { d: 'M20 4v7h-7', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round' }));
     if (kind === 'play') return h('svg', { width: 17, height: 17, viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': true }, h('path', { d: 'm9 7 8 5-8 5V7Z', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round' }));
     if (kind === 'check') return h('svg', { width: 17, height: 17, viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': true }, h('path', { d: 'm5 12 4 4L19 6', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' }));
@@ -307,7 +313,7 @@
     );
   }
 
-  function SearchScreen({ onPick }) {
+  function SearchScreen({ onPick, cardMode = false }) {
     const [query, setQuery] = useState(() => new URLSearchParams(window.location.search).get('q') || '');
     const [results, setResults] = useState([]); const [trending, setTrending] = useState(null);
     const [loading, setLoading] = useState(false); const [error, setError] = useState('');
@@ -336,15 +342,15 @@
     const pick = useCallback((anime) => { storeHistory(query.trim()); onPick(anime); }, [query, onPick]);
     const activeItems = query.trim().length >= 2 ? results : trending || [];
     return h('main', { className: 'app-shell' },
-      h('header', { className: 'app-header' }, h('div', { className: 'brand-mark', 'aria-hidden': true }, h('img', { src: logoUrl, alt: '' })), h('div', { className: 'header-copy' }, h(Heading, { as: 'h1', size: 'lg' }, 'Shikizilla'), h('p', null, T.tagline))),
+      h('header', { className: 'app-header' }, h('div', { className: 'brand-mark', 'aria-hidden': true }, h('img', { src: logoUrl, alt: '' })), h('div', { className: 'header-copy' }, h(Heading, { as: 'h1', size: 'lg' }, cardMode ? T.cards : T.discover), h('p', null, cardMode ? T.cardsTagline : T.discoverTagline))),
       h(Card, { className: 'search-panel', variant: 'elevated', padding: 'md' }, h('div', { className: `search-field${query ? ' has-clear' : ''}` }, h('span', { key: 'icon', className: 'search-icon', 'aria-hidden': true }, icon('search')), h(Input, { key: 'input', type: 'search', enterKeyHint: 'search', autoComplete: 'off', inputSize: 'lg', placeholder: T.placeholder, value: query, onChange: (event) => setQuery(event.target.value), 'aria-label': T.placeholder }), query && h(Button, { key: 'clear', className: 'clear-search', variant: 'ghost', size: 'sm', type: 'button', onClick: () => setQuery(''), 'aria-label': T.clear }, icon('close')))),
       !query && history.length ? h('section', null, h('h2', { className: 'section-title' }, T.recent), h('div', { className: 'history' }, history.map((item) => h(Button, { key: item, variant: 'outline', size: 'sm', type: 'button', onClick: () => setQuery(item) }, item)))) : null,
       h('section', null, h('h2', { className: 'section-title' }, query ? T.search : T.trending), loading || (!query && trending === null) ? h('div', { className: 'loading-row' }, h(Spinner, null)) : error ? h(Alert, { variant: 'danger' }, error) : query && !activeItems.length ? h('div', { className: 'empty-state' }, h(Heading, { as: 'h3', size: 'sm' }, T.noResults), h('p', null, T.empty)) : h('div', { className: 'result-list' }, activeItems.map((anime) => h(SearchResult, { key: `${anime.source}-${anime.id}`, anime, onPick: pick })))),
     );
   }
 
-  function MyScreen({ onPick, notify }) {
-    const [dashboard, setDashboard] = useState(null); const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [connecting, setConnecting] = useState(false); const [updatingRateId, setUpdatingRateId] = useState(null);
+  function useDashboard(notify) {
+    const [dashboard, setDashboard] = useState(null); const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [connecting, setConnecting] = useState(false);
     const load = useCallback(async (fresh = false) => {
       setLoading(true); setError('');
       try {
@@ -373,6 +379,21 @@
       try { await apiFetch('/api/shikimori/logout', { method: 'POST' }); setDashboard({ available: true, connected: false }); }
       catch (_) { notify(T.dashboardError); }
     };
+    return { dashboard, setDashboard, loading, error, connecting, load, connect, logout };
+  }
+
+  function DashboardFallback({ dashboard, loading, error, connecting, load, connect }) {
+    if (loading) return h('div', { className: 'loading-row' }, h(Spinner, null));
+    if (error) return h(Alert, { variant: 'danger' }, [h('p', { key: 'copy' }, error), h(Button, { key: 'retry', type: 'button', size: 'sm', variant: 'outline', onClick: () => load(true) }, T.retry)]);
+    if (!dashboard?.available) return h(Card, { className: 'connect-card', variant: 'elevated' }, [h(Heading, { as: 'h2', size: 'md', key: 'title' }, T.myShikimori), h('p', { key: 'copy' }, T.configuredLater)]);
+    if (!dashboard.connected) return h(Card, { className: 'connect-card', variant: 'elevated' }, [h('span', { className: 'connect-symbol', key: 'symbol', 'aria-hidden': true }, icon('account')), h(Heading, { as: 'h2', size: 'md', key: 'title' }, T.connectTitle), h('p', { key: 'copy' }, T.connectText), h(Button, { className: 'primary-action', key: 'button', type: 'button', size: 'lg', loading: connecting, onClick: connect }, T.connect)]);
+    return null;
+  }
+
+  function LibraryScreen({ onPick, notify }) {
+    const { dashboard, setDashboard, loading, error, connecting, load, connect } = useDashboard(notify);
+    const [status, setStatus] = useState('watching'); const [updatingRateId, setUpdatingRateId] = useState(null);
+    const statuses = [['watching', T.watching], ['rewatching', T.rewatching], ['planned', T.planned], ['completed', T.completed], ['on_hold', T.onHold], ['dropped', T.dropped]];
     const incrementEpisode = async (anime) => {
       if (!anime.rate_id || updatingRateId !== null) return;
       setUpdatingRateId(anime.rate_id);
@@ -380,26 +401,21 @@
         const response = await apiFetch(`/api/shikimori/rates/${anime.rate_id}/increment`, { method: 'POST' });
         const data = await response.json();
         if (!response.ok || !Number.isFinite(Number(data.progress))) throw new Error('progress update failed');
-        setDashboard((current) => ({ ...current, watching: current.watching.map((item) => item.id === anime.id ? { ...item, progress: Number(data.progress) } : item) }));
+        setDashboard((current) => ({ ...current, watching: (current.watching || []).map((item) => item.id === anime.id ? { ...item, progress: Number(data.progress) } : item), library: { ...current.library, [status]: (current.library?.[status] || []).map((item) => item.id === anime.id ? { ...item, progress: Number(data.progress) } : item) } }));
         tg?.HapticFeedback?.notificationOccurred?.('success');
       } catch (_) { notify(T.episodeUpdateError); }
       finally { setUpdatingRateId(null); }
     };
-    const profile = dashboard?.profile;
-    return h('main', { className: 'app-shell my-shell' }, [
+    const ready = !loading && !error && dashboard?.available && dashboard.connected;
+    const items = dashboard?.library?.[status] || (status === 'watching' ? dashboard?.watching : []) || [];
+    return h('main', { className: 'app-shell library-shell' }, [
       h('header', { className: 'app-header my-header', key: 'header' }, [
         h('div', { className: 'brand-mark', key: 'mark', 'aria-hidden': true }, h('img', { src: logoUrl, alt: '' })),
-        h('div', { className: 'header-copy', key: 'copy' }, h(Heading, { as: 'h1', size: 'lg', key: 'title' }, T.myShikimori)),
+        h('div', { className: 'header-copy', key: 'copy' }, [h(Heading, { as: 'h1', size: 'lg', key: 'title' }, T.library), h('p', { key: 'tagline' }, T.libraryTagline)]),
       ]),
-      loading ? h('div', { className: 'loading-row', key: 'loading' }, h(Spinner, null)) : error ? h(Alert, { variant: 'danger', key: 'error' }, [h('p', { key: 'copy' }, error), h(Button, { key: 'retry', type: 'button', size: 'sm', variant: 'outline', onClick: () => load(true) }, T.retry)]) : !dashboard?.available ? h(Card, { className: 'connect-card', variant: 'elevated', key: 'unavailable' }, [h(Heading, { as: 'h2', size: 'md', key: 'title' }, T.myShikimori), h('p', { key: 'copy' }, T.configuredLater)]) : !dashboard.connected ? h(Card, { className: 'connect-card', variant: 'elevated', key: 'connect' }, [h('span', { className: 'connect-symbol', key: 'symbol', 'aria-hidden': true }, icon('account')), h(Heading, { as: 'h2', size: 'md', key: 'title' }, T.connectTitle), h('p', { key: 'copy' }, T.connectText), h(Button, { className: 'primary-action', key: 'button', type: 'button', size: 'lg', loading: connecting, onClick: connect }, T.connect)]) : h('section', { className: 'dashboard-content', key: 'dashboard' }, [
-        h('div', { className: 'profile-strip', key: 'profile' }, [
-          profile?.avatar ? h('img', { className: 'profile-avatar', key: 'avatar', src: proxyUrl(profile.avatar), alt: '' }) : h('span', { className: 'profile-placeholder', key: 'avatar', 'aria-hidden': true }, icon('account')),
-          h('div', { key: 'copy' }, [h('strong', { key: 'name' }, profile?.nickname), h('p', { key: 'count' }, `${dashboard.friends_count || 0} ${T.friends}`)]),
-          h(Button, { className: 'refresh-button', type: 'button', variant: 'ghost', size: 'sm', onClick: () => load(true), 'aria-label': T.refresh, key: 'refresh' }, icon('refresh')),
-          h(Button, { className: 'logout-button', type: 'button', variant: 'ghost', size: 'sm', onClick: logout, key: 'logout' }, T.logout),
-        ]),
-        h('h2', { className: 'section-title', key: 'heading' }, T.watching),
-        dashboard.watching?.length ? h('div', { className: 'watch-list', key: 'list' }, dashboard.watching.map((anime) => {
+      ready ? h('section', { className: 'dashboard-content', key: 'dashboard' }, [
+        h('div', { className: 'status-tabs', role: 'tablist', 'aria-label': T.library, key: 'tabs' }, statuses.map(([id, label]) => h('button', { key: id, type: 'button', role: 'tab', 'aria-selected': status === id, className: status === id ? 'is-active' : '', onClick: () => setStatus(id) }, [h('span', { key: 'label' }, label), h('b', { key: 'count' }, dashboard.counts?.[id] || 0)]))),
+        items.length ? h('div', { className: 'watch-list', key: 'list' }, items.map((anime) => {
           const total = Number(anime.episodes || 0); const progress = Number(anime.progress || 0); const percent = total ? Math.min(100, Math.round(progress / total * 100)) : 0;
           const atLastEpisode = Boolean(total && progress >= total);
           const updating = updatingRateId === anime.rate_id;
@@ -408,18 +424,34 @@
               h('img', { className: 'result-poster', src: proxyUrl(anime.image_preview || anime.image_url), onError: (event) => useFallbackPoster(event, anime.image_fallback_url), alt: anime.title || anime.name, key: 'poster' }),
               h('div', { className: 'watch-copy', key: 'copy' }, [
                 h('p', { className: 'result-title', key: 'title' }, anime.title || anime.name),
-                h('p', { className: 'watch-progress', key: 'progress', 'aria-live': 'polite' }, `${T.progress}: ${progress}${total ? ` / ${total}` : ''}`),
+                h('p', { className: 'watch-progress', key: 'progress', 'aria-live': 'polite' }, [`${T.progress}: ${progress}${total ? ` / ${total}` : ''}`, anime.user_score ? ` · ${T.libraryScore}: ${anime.user_score}` : '']),
                 total ? h('div', { className: 'progress-track', key: 'track', 'aria-label': `${T.progress}: ${percent}%` }, h('span', { style: { width: `${percent}%` } })) : null,
-                h('div', { className: 'rating-block', key: 'ratings' }, [h('span', { className: 'rating-label', key: 'label' }, T.friendScores), anime.friends?.length ? h('div', { className: 'friend-ratings', key: 'ratings' }, anime.friends.map((friend) => h('span', { className: 'friend-rating', key: friend.id, title: `${friend.nickname}: ${friend.score}` }, friend.avatar ? h('img', { src: proxyUrl(friend.avatar), alt: '' }) : null, h('span', null, friend.nickname), h('b', null, friend.score)))) : h('span', { className: 'no-ratings', key: 'empty' }, T.noFriendScores)]),
+                anime.friends?.length ? h('div', { className: 'rating-block', key: 'ratings' }, [h('span', { className: 'rating-label', key: 'label' }, T.friendScores), h('div', { className: 'friend-ratings', key: 'friends' }, anime.friends.map((friend) => h('span', { className: 'friend-rating', key: friend.id, title: `${friend.nickname}: ${friend.score}` }, friend.avatar ? h('img', { src: proxyUrl(friend.avatar), alt: '' }) : null, h('span', null, friend.nickname), h('b', null, friend.score))))]) : null,
               ]),
             ])),
-            h('div', { className: 'watch-actions', key: 'actions' }, [
+            status === 'watching' || status === 'rewatching' ? h('div', { className: 'watch-actions', key: 'actions' }, [
               anime.aniliberty_url ? h('a', { className: 'watch-action aniliberty-link', href: anime.aniliberty_url, target: '_blank', rel: 'noopener noreferrer', onClick: (event) => openExternal(event, anime.aniliberty_url), key: 'aniliberty' }, icon('play'), h('span', null, T.watchAniliberty)) : null,
               h('button', { className: 'watch-action episode-action', type: 'button', disabled: !anime.rate_id || atLastEpisode || updating, onClick: () => incrementEpisode(anime), key: 'episode' }, icon('check'), h('span', null, updating ? T.episodeUpdating : T.episodeWatched)),
-            ]),
+            ]) : null,
           ]));
         })) : h('div', { className: 'empty-state', key: 'empty' }, h('p', null, T.noWatching)),
-      ]),
+      ]) : h(DashboardFallback, { dashboard, loading, error, connecting, load, connect, key: 'fallback' }),
+    ]);
+  }
+
+  function ProfileScreen({ notify }) {
+    const { dashboard, loading, error, connecting, load, connect, logout } = useDashboard(notify);
+    const ready = !loading && !error && dashboard?.available && dashboard.connected;
+    const profile = dashboard?.profile; const counts = dashboard?.counts || {}; const summary = dashboard?.summary || {};
+    const stats = [[T.totalTitles, summary.total || 0], [T.watching, (counts.watching || 0) + (counts.rewatching || 0)], [T.completed, counts.completed || 0], [T.watchedEpisodes, summary.episodes || 0], [T.scoredTitles, summary.scored || 0], [T.friends, dashboard?.friends_count || 0]];
+    return h('main', { className: 'app-shell profile-shell' }, [
+      h('header', { className: 'app-header', key: 'header' }, [h('div', { className: 'brand-mark', key: 'mark', 'aria-hidden': true }, h('img', { src: logoUrl, alt: '' })), h('div', { className: 'header-copy', key: 'copy' }, [h(Heading, { as: 'h1', key: 'title' }, T.account), h('p', { key: 'tagline' }, T.profileTagline)])]),
+      ready ? h('section', { className: 'profile-content', key: 'content' }, [
+        h(Card, { className: 'profile-card', key: 'profile' }, [profile?.avatar ? h('img', { className: 'profile-avatar profile-avatar--lg', src: proxyUrl(profile.avatar), alt: profile.nickname, key: 'avatar' }) : h('span', { className: 'profile-placeholder profile-avatar--lg', 'aria-hidden': true, key: 'avatar' }, icon('account')), h('div', { className: 'profile-card-copy', key: 'copy' }, [h('strong', { key: 'name' }, profile?.nickname), h('span', { key: 'service' }, 'Shikimori')]), h(Button, { className: 'refresh-button', type: 'button', variant: 'ghost', onClick: () => load(true), 'aria-label': T.refresh, key: 'refresh' }, icon('refresh'))]),
+        h('div', { className: 'stats-grid', key: 'stats' }, stats.map(([label, value]) => h('div', { className: 'stat-card', key: label }, [h('strong', { key: 'value' }, value), h('span', { key: 'label' }, label)]))),
+        profile?.url ? h('a', { className: 'profile-link', href: profile.url, target: '_blank', rel: 'noopener noreferrer', onClick: (event) => openExternal(event, profile.url), key: 'link' }, T.openProfile) : null,
+        h(Button, { className: 'profile-logout', type: 'button', variant: 'outline', onClick: logout, key: 'logout' }, T.logout),
+      ]) : h(DashboardFallback, { dashboard, loading, error, connecting, load, connect, key: 'fallback' }),
     ]);
   }
 
@@ -431,7 +463,7 @@
       try {
         const response = await apiFetch(`/api/shikimori/animes/${anime.id}${fresh ? '?refresh=1' : ''}`, { cache: 'no-store' });
         const data = await response.json();
-        if (!response.ok || !data.connected) throw new Error(data.error || 'details failed');
+        if (!response.ok) throw new Error(data.error || 'details failed');
         setDetails(data); setRate(data.rate || null);
       } catch (_) { setError(T.dashboardError); }
       finally { setLoading(false); }
@@ -467,7 +499,7 @@
           details.duration ? h('div', { key: 'duration' }, [h('h2', null, T.runtime), h('p', null, details.duration)]) : null,
           details.rating ? h('div', { key: 'rating' }, [h('h2', null, T.adult), h('p', null, details.rating)]) : null,
         ]),
-        h(Card, { className: 'rate-editor', key: 'rate' }, rate ? [
+        h(Card, { className: 'rate-editor', key: 'rate' }, !details.connected ? h('div', { className: 'rate-editor-empty' }, [h('p', { key: 'copy' }, T.connectHint)]) : rate ? [
           h('label', { key: 'status' }, [h('span', null, T.changeStatus), h('select', { value: rate.status || 'planned', onChange: (event) => setRate((current) => ({ ...current, status: event.target.value })) }, statuses.map(([value, label]) => h('option', { key: value, value }, label)))]),
           h('label', { key: 'score' }, [h('span', null, T.rateScore), h('select', { value: String(rate.score || 0), onChange: (event) => setRate((current) => ({ ...current, score: Number(event.target.value) })) }, Array.from({ length: 11 }, (_, score) => h('option', { key: score, value: score }, score ? score : T.noScore)))]),
           h('div', { className: 'rate-editor-actions', key: 'actions' }, [h(Button, { key: 'save', type: 'button', loading: saving, onClick: () => updateRate({ status: rate.status, score: rate.score }) }, saving ? T.saving : T.save), h(Button, { key: 'remove', type: 'button', variant: 'ghost', disabled: saving, onClick: () => updateRate({}, true) }, T.removeFromList)]),
@@ -568,12 +600,14 @@
     ]);
   }
 
-  function BottomNavigation({ view, onChange }) {
-    const items = [
+  function BottomNavigation({ view, onChange, fullClient }) {
+    const items = fullClient ? [
+      ['home', T.discover, 'home'],
+      ['library', T.library, 'library'],
       ['cards', T.cards, 'cards'],
-      ['my', T.account, 'account'],
-    ];
-    return h('nav', { className: 'bottom-nav', 'aria-label': T.navigation },
+      ['profile', T.account, 'account'],
+    ] : [['home', T.discover, 'home'], ['cards', T.cards, 'cards']];
+    return h('nav', { className: `bottom-nav bottom-nav--${items.length}`, 'aria-label': T.navigation },
       h('div', { className: 'bottom-nav-inner' }, items.map(([id, label, iconName]) => {
         const active = view === id;
         return h('button', {
@@ -591,7 +625,7 @@
   }
 
   function App() {
-    const [stack, setStack] = useState([{ name: 'cards' }]); const [toast, setToast] = useState('');
+    const [stack, setStack] = useState([{ name: 'home' }]); const [toast, setToast] = useState('');
     const notify = useCallback((message) => { setToast(message); window.setTimeout(() => setToast(''), 2800); }, []);
     const push = useCallback((screen) => setStack((current) => [...current, screen]), []);
     const pop = useCallback(() => setStack((current) => current.length > 1 ? current.slice(0, -1) : current), []);
@@ -602,13 +636,16 @@
       return () => tg?.BackButton?.offClick?.(pop);
     }, [stack.length, pop]);
     let screen;
-    if (current.name === 'my') screen = h(MyScreen, { onPick: (anime) => push({ name: 'anime', anime }), notify, key: 'my' });
-    else if (current.name === 'cards') screen = h(SearchScreen, { onPick: (anime) => push({ name: 'editor', anime }), key: 'cards' });
+    if (current.name === 'home') screen = h(SearchScreen, { onPick: (anime) => push({ name: 'anime', anime }), key: 'home' });
+    else if (current.name === 'library') screen = h(LibraryScreen, { onPick: (anime) => push({ name: 'anime', anime }), notify, key: 'library' });
+    else if (current.name === 'cards') screen = h(SearchScreen, { cardMode: true, onPick: (anime) => push({ name: 'editor', anime }), key: 'cards' });
+    else if (current.name === 'profile') screen = h(ProfileScreen, { notify, key: 'profile' });
     else if (current.name === 'anime') screen = h(AnimeScreen, { anime: current.anime, onBack: pop, onEdit: () => push({ name: 'editor', anime: current.anime }), notify, key: `anime-${current.anime.id}` });
     else screen = h(Editor, { anime: current.anime, onBack: pop, notify, key: `editor-${current.anime.id}` });
+    const rootNames = ['home', 'library', 'cards', 'profile'];
     return h(Fragment, null, [
       screen,
-      (inTelegram || inlineLaunch) && (current.name === 'my' || current.name === 'cards') ? h(BottomNavigation, { view: current.name, onChange: (name) => setStack([{ name }]), key: 'navigation' }) : null,
+      rootNames.includes(current.name) ? h(BottomNavigation, { view: current.name, fullClient: inTelegram || inlineLaunch, onChange: (name) => setStack([{ name }]), key: 'navigation' }) : null,
       toast ? h('div', { className: `toast${current.name === 'editor' ? ' toast--editor' : ''}`, role: 'status', key: 'toast' }, toast) : null,
     ]);
   }
