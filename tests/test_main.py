@@ -32,6 +32,7 @@ from app.main import (
     fetch_json,
     fetch_shikimori_anime_details,
     fetch_shikimori_friends,
+    fetch_shikimori_library,
     fetch_tenrai_pictures,
     parse_card_query,
     shikimori_authorize_url,
@@ -116,6 +117,116 @@ def test_shikimori_dashboard_advertises_availability() -> None:
 
     assert dashboard["available"] is True
     assert dashboard["connected"] is True
+
+
+def test_shikimori_library_groups_every_supported_status() -> None:
+    rates = [
+        {
+            "id": 101,
+            "status": "watching",
+            "score": 8,
+            "episodes": 4,
+            "anime": {
+                "id": 17,
+                "name": "Sousou no Frieren",
+                "russian": "Провожающая в последний путь Фрирен",
+                "kind": "tv",
+                "score": "9.1",
+                "status": "released",
+                "episodes": 28,
+                "aired_on": "2023-09-29",
+                "image": {"original": "/uploads/poster/animes/17/original.jpg"},
+            },
+        },
+        {
+            "id": 102,
+            "status": "completed",
+            "score": 10,
+            "episodes": 12,
+            "anime": {
+                "id": 18,
+                "name": "Odd Taxi",
+                "russian": "Необычное такси",
+                "kind": "tv",
+                "score": "8.7",
+                "status": "released",
+                "episodes": 13,
+                "aired_on": "2021-04-06",
+                "image": {"preview": "/uploads/poster/animes/18/preview.jpg"},
+            },
+        },
+    ]
+
+    with patch("app.main.fetch_json", new=AsyncMock(return_value=rates)):
+        library, animes = asyncio.run(
+            fetch_shikimori_library(SimpleNamespace(), 1, {"Authorization": "Bearer token"})
+        )
+
+    assert set(library) == {
+        "watching",
+        "rewatching",
+        "planned",
+        "completed",
+        "on_hold",
+        "dropped",
+    }
+    assert library["watching"][0]["progress"] == 4
+    assert library["watching"][0]["user_score"] == 8
+    assert library["completed"][0]["title"] == "Необычное такси"
+    assert [anime.id for anime in animes] == [17, 18]
+
+
+def test_shikimori_dashboard_includes_library_counts_and_summary() -> None:
+    anime = Anime(
+        id=17,
+        name="Sousou no Frieren",
+        russian="Провожающая в последний путь Фрирен",
+        kind="tv",
+        score="9.1",
+        status="released",
+        image_url="https://shikimori.io/poster.jpg",
+        image_preview="https://shikimori.io/preview.jpg",
+        image_source="shikimori",
+        episodes=28,
+        year=2023,
+        genres=(),
+        source="shikimori",
+    )
+    watching = {
+        "id": 17,
+        "name": anime.name,
+        "title": anime.title,
+        "rate_id": 101,
+        "rate_status": "watching",
+        "progress": 4,
+        "user_score": 8,
+        "friends": [],
+    }
+    completed = {**watching, "id": 18, "rate_id": 102, "progress": 12, "user_score": 10}
+    library = {
+        "watching": [watching],
+        "rewatching": [],
+        "planned": [],
+        "completed": [completed],
+        "on_hold": [],
+        "dropped": [],
+    }
+    with (
+        patch("app.main.fetch_shikimori_profile", new=AsyncMock(return_value={"id": 1})),
+        patch(
+            "app.main.fetch_shikimori_library",
+            new=AsyncMock(return_value=(library, [anime])),
+        ),
+        patch("app.main.fetch_shikimori_friends", new=AsyncMock(return_value=[])),
+        patch("app.main.fetch_friend_scores", new=AsyncMock(return_value={})),
+        patch("app.main.fetch_optional_anilist_covers", new=AsyncMock(return_value={})),
+        patch("app.main.fetch_aniliberty_releases", new=AsyncMock(return_value={})),
+    ):
+        dashboard = asyncio.run(shikimori_dashboard(SimpleNamespace(), "token"))
+
+    assert dashboard["counts"]["watching"] == 1
+    assert dashboard["counts"]["completed"] == 1
+    assert dashboard["summary"] == {"total": 2, "scored": 2, "episodes": 16}
 
 
 def test_invalid_shikimori_token_key_disables_oauth_without_stopping_webapp(
@@ -626,6 +737,30 @@ def test_webapp_rejects_unauthenticated_requests_and_upload_failures(tmp_path: P
                 assert dashboard.headers["Cache-Control"] == "no-store"
                 response = await client.get("/api/search?q=x")
                 assert response.status == 200
+                details_payload = {
+                    "id": 17,
+                    "name": "Odd Taxi",
+                    "title": "Необычное такси",
+                    "score": "8.7",
+                    "status": "released",
+                    "episodes": 13,
+                    "duration": 23,
+                    "rating": "pg_13",
+                    "genres": ["Детектив"],
+                    "studios": ["OLM"],
+                    "rate": None,
+                }
+                with patch(
+                    "app.main.fetch_shikimori_anime_details",
+                    new=AsyncMock(return_value=details_payload),
+                ):
+                    public_details = await client.get("/api/shikimori/animes/17")
+                assert public_details.status == 200
+                assert await public_details.json() == {
+                    "available": False,
+                    "connected": False,
+                    **details_payload,
+                }
                 assert (await client.get("/static/ds/styles.css")).status == 200
                 assert (await client.get("/static/webapp.css")).status == 200
                 assert (await client.get("/static/webapp.js")).status == 200

@@ -67,6 +67,14 @@ SHIKIMORI_FRIENDS_RATES_LIMIT = 50
 # deliberately narrow: adding scopes later would require every user to sign in again.
 SHIKIMORI_OAUTH_SCOPE = "user_rates"
 SHIKIMORI_RATE_STATUSES = {"planned", "watching", "rewatching", "completed", "on_hold", "dropped"}
+SHIKIMORI_LIBRARY_STATUS_ORDER = (
+    "watching",
+    "rewatching",
+    "planned",
+    "completed",
+    "on_hold",
+    "dropped",
+)
 MAX_RENDERED_IMAGE_BYTES = 5 * 1024 * 1024
 MAX_PROXY_IMAGE_BYTES = 5 * 1024 * 1024
 ALLOWED_IMAGE_HOSTS = {
@@ -975,7 +983,7 @@ def shikimori_profile_payload(raw: dict[str, Any]) -> dict[str, Any]:
         "avatar": absolute_url(
             as_text(raw.get("avatar") or image.get("x80") or image.get("x48"))
         ),
-        "url": as_text(raw.get("url")),
+        "url": absolute_url(as_text(raw.get("url"))),
     }
 
 
@@ -992,6 +1000,44 @@ async def fetch_shikimori_profile(
     if as_int(profile.get("id")) is None:
         raise ValueError("Shikimori profile is unavailable")
     return profile
+
+
+async def fetch_shikimori_library(
+    session: UpstreamSessions, user_id: int, headers: dict[str, str]
+) -> tuple[dict[str, list[dict[str, Any]]], list[Anime]]:
+    """Load the complete anime library in one request and group it for the client UI."""
+    raw_rates = await fetch_json(
+        session,
+        f"{SHIKIMORI_ORIGIN}/api/users/{user_id}/anime_rates",
+        params={"limit": "500"},
+        extra_headers=headers,
+    )
+    library: dict[str, list[dict[str, Any]]] = {
+        status: [] for status in SHIKIMORI_LIBRARY_STATUS_ORDER
+    }
+    animes: list[Anime] = []
+    for raw_rate in raw_rates if isinstance(raw_rates, list) else []:
+        rate = as_mapping(raw_rate)
+        anime_data = as_mapping(rate.get("anime"))
+        if as_int(anime_data.get("id")) is None:
+            continue
+        status = as_text(rate.get("status"))
+        if status not in library:
+            continue
+        anime = Anime.from_shikimori(anime_data)
+        entry = anime_payload(anime)
+        entry.update(
+            {
+                "rate_id": as_int(rate.get("id")),
+                "rate_status": status,
+                "progress": as_int(rate.get("episodes")) or 0,
+                "user_score": as_int(rate.get("score")) or 0,
+                "friends": [],
+            }
+        )
+        library[status].append(entry)
+        animes.append(anime)
+    return library, animes
 
 
 async def fetch_friend_scores(
@@ -1077,29 +1123,14 @@ async def shikimori_dashboard(
     if user_id is None:
         raise ValueError("Shikimori profile has no id")
     headers = shikimori_auth_headers(access_token)
-    watch_data, friends = await asyncio.gather(
-        fetch_json(
-            session,
-            f"{SHIKIMORI_ORIGIN}/api/users/{user_id}/anime_rates",
-            params={"status": "watching", "limit": "500"},
-            extra_headers=headers,
-        ),
+    library_result, friends = await asyncio.gather(
+        fetch_shikimori_library(session, user_id, headers),
         fetch_shikimori_friends(session, user_id, headers),
     )
-    watching: list[dict[str, Any]] = []
-    watching_animes: list[Anime] = []
-    for rate in watch_data if isinstance(watch_data, list) else []:
-        rate_data = as_mapping(rate)
-        anime_data = as_mapping(rate_data.get("anime"))
-        if as_int(anime_data.get("id")) is None:
-            continue
-        anime = Anime.from_shikimori(anime_data)
-        entry = anime_payload(anime)
-        entry["rate_id"] = as_int(rate_data.get("id"))
-        entry["progress"] = as_int(rate_data.get("episodes")) or 0
-        entry["friends"] = []
-        watching.append(entry)
-        watching_animes.append(anime)
+    library, library_animes = library_result
+    watching = library["watching"]
+    watching_anime_ids = {int(item["id"]) for item in watching}
+    watching_animes = [anime for anime in library_animes if anime.id in watching_anime_ids]
 
     watching_ids = {int(item["id"]) for item in watching}
     friend_scores_task = (
@@ -1136,6 +1167,17 @@ async def shikimori_dashboard(
         "available": True,
         "connected": True,
         "profile": shikimori_profile_payload(profile),
+        "library": library,
+        "counts": {status: len(library[status]) for status in SHIKIMORI_LIBRARY_STATUS_ORDER},
+        "summary": {
+            "total": sum(len(items) for items in library.values()),
+            "scored": sum(
+                1 for items in library.values() for item in items if item["user_score"] > 0
+            ),
+            "episodes": sum(
+                int(item["progress"]) for items in library.values() for item in items
+            ),
+        },
         "watching": watching,
         "friends_count": len(friends),
     }
@@ -1312,7 +1354,7 @@ def results_button(
     settings: Settings, query_text: str, ru: bool, user_id: int
 ) -> InlineQueryResultsButton:
     return InlineQueryResultsButton(
-        text="🎨 Собрать карточку в WebApp" if ru else "🎨 Build a card in WebApp",
+        text="Собрать карточку" if ru else "Build a card",
         web_app=WebAppInfo(
             url=webapp_url(settings, query_text, inline_user_id=user_id)
         ),
@@ -1324,17 +1366,16 @@ def is_russian(language_code: str | None) -> bool:
 
 
 START_TEXT_RU = (
-    "Привет! Я собираю красивые карточки аниме.\n\n"
-    "1. Открой конструктор кнопкой ниже или напиши <code>@{username} название</code> "
-    "в любом чате\n"
-    "2. Выбери аниме, постер и стиль\n"
-    "3. Отправь карточку друзьям"
+    "Привет! Это Shikizilla — клиент Shikimori в Telegram.\n\n"
+    "Следи за новинками, управляй списком и отмечай просмотренные серии. "
+    "А ещё создавай карточки и отправляй их друзьям.\n\n"
+    "Для быстрого поиска в чате напиши <code>@{username} название</code>."
 )
 START_TEXT_EN = (
-    "Hi! I build pretty anime cards.\n\n"
-    "1. Open the builder below or type <code>@{username} title</code> in any chat\n"
-    "2. Pick an anime, a poster and a style\n"
-    "3. Share the card with friends"
+    "Hi! Shikizilla is your Shikimori client in Telegram.\n\n"
+    "Discover anime, manage your library, and track watched episodes. "
+    "You can also create cards and share them with friends.\n\n"
+    "For quick search in any chat, type <code>@{username} title</code>."
 )
 
 
@@ -1393,13 +1434,13 @@ def build_router(
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text="🎨 Открыть конструктор" if ru else "🎨 Open the builder",
+                        text="Открыть Shikizilla" if ru else "Open Shikizilla",
                         web_app=WebAppInfo(url=webapp_url(settings)),
                     )
                 ],
                 [
                     InlineKeyboardButton(
-                        text="💬 Попробовать в чате" if ru else "💬 Try inline",
+                        text="Найти в чате" if ru else "Search in chat",
                         switch_inline_query="",
                     )
                 ],
@@ -1530,6 +1571,13 @@ async def create_web_app(
             raise web.HTTPUnauthorized(text="Telegram user required")
         return user_id
 
+    def optional_telegram_user(request: web.Request) -> int | None:
+        """Resolve a signed Telegram identity while keeping read-only catalogue routes public."""
+        try:
+            return require_telegram_user(request)
+        except web.HTTPUnauthorized:
+            return None
+
     async def user_access_token(telegram_user_id: int) -> str | None:
         if token_store is None:
             return None
@@ -1631,11 +1679,27 @@ async def create_web_app(
             return shikimori_json({"error": "Could not update episode progress"}, status=502)
         cached = shikimori_cache.get(str(telegram_user_id))
         if cached is not None:
-            watching = [
-                {**item, "progress": progress} if item.get("rate_id") == int(raw_rate_id) else item
-                for item in cached.get("watching", [])
-            ]
-            shikimori_cache.put(str(telegram_user_id), {**cached, "watching": watching})
+            def update_progress(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+                return [
+                    {**item, "progress": progress}
+                    if item.get("rate_id") == int(raw_rate_id)
+                    else item
+                    for item in items
+                ]
+
+            library = {
+                status: update_progress(items)
+                for status, items in as_mapping(cached.get("library")).items()
+                if isinstance(items, list)
+            }
+            shikimori_cache.put(
+                str(telegram_user_id),
+                {
+                    **cached,
+                    "watching": update_progress(cached.get("watching", [])),
+                    "library": library,
+                },
+            )
         anime_details_cache.delete_prefix(f"{telegram_user_id}:")
         return shikimori_json({"ok": True, "progress": progress})
 
@@ -1644,27 +1708,40 @@ async def create_web_app(
         if not raw_anime_id.isdigit() or int(raw_anime_id) <= 0:
             raise web.HTTPNotFound()
         anime_id = int(raw_anime_id)
-        telegram_user_id = require_telegram_user(request)
-        if token_store is None:
-            return shikimori_json({"available": False, "connected": False}, status=503)
-        access_token = await user_access_token(telegram_user_id)
-        cache_key = f"{telegram_user_id}:{anime_id}"
+        telegram_user_id = optional_telegram_user(request)
+        access_token = (
+            await user_access_token(telegram_user_id)
+            if telegram_user_id is not None and token_store is not None
+            else None
+        )
+        connected = access_token is not None
+        cache_key = f"{telegram_user_id if connected else 'public'}:{anime_id}"
         cached = anime_details_cache.get(cache_key)
         if cached is not None and request.query.get("refresh") != "1":
             return shikimori_json(cached)
         try:
             details = await fetch_shikimori_anime_details(session, anime_id, access_token)
         except ClientResponseError as exc:
-            if exc.status in (401, 403):
+            if exc.status in (401, 403) and telegram_user_id is not None and token_store:
                 async with token_lock:
                     token_store.delete(telegram_user_id)
-                return shikimori_json({"available": True, "connected": False}, status=401)
-            logging.warning("Shikimori details request failed", exc_info=True)
-            return shikimori_json({"error": "Shikimori is temporarily unavailable"}, status=502)
+                try:
+                    details = await fetch_shikimori_anime_details(session, anime_id)
+                    connected = False
+                except Exception:
+                    logging.warning("Public Shikimori details retry failed", exc_info=True)
+                    return shikimori_json(
+                        {"error": "Shikimori is temporarily unavailable"}, status=502
+                    )
+            else:
+                logging.warning("Shikimori details request failed", exc_info=True)
+                return shikimori_json(
+                    {"error": "Shikimori is temporarily unavailable"}, status=502
+                )
         except Exception:
             logging.warning("Shikimori details request failed", exc_info=True)
             return shikimori_json({"error": "Shikimori is temporarily unavailable"}, status=502)
-        payload = {"available": True, "connected": True, **details}
+        payload = {"available": token_store is not None, "connected": connected, **details}
         anime_details_cache.put(cache_key, payload)
         return shikimori_json(payload)
 
