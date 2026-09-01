@@ -91,13 +91,11 @@ PROXIED_API_HOSTS = {"api.tenrai.org"}
 WEBAPP_DIR = Path(__file__).parent
 WEBAPP_HTML_PATH = WEBAPP_DIR / "webapp.html"
 WEBAPP_STATIC_DIR = WEBAPP_DIR / "static"
+# Every served asset feeds the cache key, so adding a file cannot leave stale
+# copies in Telegram's webview.
 WEBAPP_VERSIONED_ASSETS = (
     WEBAPP_HTML_PATH,
-    WEBAPP_STATIC_DIR / "shikizilla-logo.png",
-    WEBAPP_STATIC_DIR / "webapp.css",
-    WEBAPP_STATIC_DIR / "webapp.js",
-    WEBAPP_STATIC_DIR / "vendor" / "preact.min.js",
-    WEBAPP_STATIC_DIR / "vendor" / "preact-hooks.umd.js",
+    *sorted(path for path in WEBAPP_STATIC_DIR.rglob("*") if path.is_file()),
 )
 _webapp_asset_digest = hashlib.sha256()
 for _webapp_asset_path in WEBAPP_VERSIONED_ASSETS:
@@ -458,19 +456,49 @@ def telegram_main_webapp_url(bot_username: str) -> str | None:
 
 
 def oauth_callback_response(message: str, success: bool) -> web.Response:
+    """Standalone confirmation page, styled like the glepzilla terminal landing."""
     title = "Shikimori подключён" if success else "Вход в Shikimori"
-    tone = "#4d7133" if success else "#9f3d37"
+    status = "ok" if success else "failed"
+    dot = "#8fbb5f" if success else "#c96a5a"
     document = f"""<!doctype html>
-<html lang="ru"><meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>{html.escape(title)}</title><body style="margin:0;background:#eee8d7;color:#22301a">
-<main><div></div><h1>{html.escape(title)}</h1><p>{html.escape(message)}</p>
-<button onclick="window.close()">Закрыть</button></main>
+<html lang="ru"><meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="theme-color" content="#070906" />
+<title>{html.escape(title)}</title>
+<link rel="stylesheet" href="/static/fonts/fonts.css" />
+<body>
+<main>
+<div class="bar"><i></i><i></i><i class="on"></i><span>shikimori — auth</span></div>
+<div class="body">
+<p class="prompt">shikimori auth --callback <b>{status}</b></p>
+<h1>{html.escape(title)}</h1>
+<p class="copy">{html.escape(message)}</p>
+<button onclick="window.close()">Закрыть</button>
+</div>
+</main>
 <style>
-body{{font:16px/1.5 system-ui,sans-serif}}
-main{{max-width:420px;margin:15vh auto;padding:28px;text-align:center}}
-main>div{{width:48px;height:48px;margin:auto;border-radius:50%;background:{tone}}}
-h1{{font:500 30px Georgia,serif}}
-button{{padding:12px 18px;border:0;border-radius:10px;background:#3f5330;color:#fff;font:inherit}}
+:root{{color-scheme:dark}}
+body{{margin:0;min-height:100svh;background:#070906;color:#eef1e9;
+font:400 14px/1.7 'IBM Plex Mono',ui-monospace,monospace}}
+main{{max-width:27rem;margin:14vh auto;border:1px solid rgba(143,187,95,.24);
+border-radius:10px;background:rgba(6,8,6,.92);box-shadow:0 30px 70px -30px rgba(0,0,0,.85);
+overflow:hidden}}
+.bar{{display:flex;align-items:center;gap:8px;padding:11px 14px;
+border-bottom:1px solid rgba(233,240,226,.08);background:rgba(20,24,19,.9)}}
+.bar i{{width:9px;height:9px;border-radius:50%;background:#545c4e}}
+.bar i.on{{background:{dot}}}
+.bar span{{margin-left:6px;color:#737b6c;font-size:11.5px}}
+.body{{padding:22px}}
+.prompt{{margin:0;color:#737b6c;font-size:12.5px}}
+.prompt::before{{content:'% ';color:#8fbb5f}}
+.prompt b{{color:{dot};font-weight:400}}
+h1{{margin:14px 0 8px;font:400 20px/1.25 Prata,Georgia,serif}}
+.copy{{margin:0 0 22px;color:#a8b0a0;font-family:Literata,Georgia,serif;font-size:13.5px}}
+button{{min-height:44px;padding:10px 18px;border:1px solid #74964a;border-radius:10px;
+background:#74964a;color:#070906;
+font:500 12.5px 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.04em;
+text-transform:uppercase;cursor:pointer}}
+button:hover{{background:#8fbb5f;border-color:#b9d977}}
 </style>
 </body></html>"""
     return web.Response(
@@ -608,20 +636,20 @@ async def fetch_shikimori_anime_details(
     """
     headers = shikimori_auth_headers(access_token) if access_token else None
     query = """
-      query {
-        animes(ids: \"$anime_id\", limit: 1) {
+      query($ids: String!) {
+        animes(ids: $ids, limit: 1) {
           id name russian score status episodes duration rating
           genres { id name russian kind }
           studios { id name }
           userRate { id status score episodes }
         }
       }
-    """.replace("$anime_id", str(anime_id))
+    """
     response = as_mapping(
         await fetch_json(
             session,
             f"{SHIKIMORI_ORIGIN}/api/graphql",
-            json_payload={"query": query},
+            json_payload={"query": query, "variables": {"ids": str(anime_id)}},
             extra_headers=headers,
         )
     )
@@ -1129,10 +1157,8 @@ async def shikimori_dashboard(
     )
     library, library_animes = library_result
     watching = library["watching"]
-    watching_anime_ids = {int(item["id"]) for item in watching}
-    watching_animes = [anime for anime in library_animes if anime.id in watching_anime_ids]
-
     watching_ids = {int(item["id"]) for item in watching}
+    watching_animes = [anime for anime in library_animes if anime.id in watching_ids]
     friend_scores_task = (
         fetch_friend_scores(session, friends, watching_ids)
         if watching_ids
@@ -1542,6 +1568,13 @@ async def create_web_app(
             logging.exception("Shikimori OAuth disabled: invalid token encryption key")
     bot_username = as_text(settings.bot_username)
 
+    async def cache_static_assets(
+        request: web.Request, response: web.StreamResponse
+    ) -> None:
+        """Assets are requested with a content-hash query, so they never go stale."""
+        if request.path.startswith("/static/") and response.status == 200:
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+
     async def webapp_page(_: web.Request) -> web.Response:
         return web.Response(
             text=webapp_html,
@@ -1924,23 +1957,31 @@ async def create_web_app(
         }
         if parsed.netloc in PROXIED_IMAGE_HOSTS and settings.proxy_url:
             request_options["proxy"] = settings.proxy_url
-        async with session.get(url, **request_options) as resp:
-            resp.raise_for_status()
-            try:
-                content_length = int(resp.headers.get("Content-Length") or 0)
-            except ValueError:
-                content_length = 0
-            if content_length > MAX_PROXY_IMAGE_BYTES:
-                return web.Response(status=413, text="image too large")
-            chunks: list[bytes] = []
-            total = 0
-            async for chunk in resp.content.iter_chunked(64 * 1024):
-                total += len(chunk)
-                if total > MAX_PROXY_IMAGE_BYTES:
+        try:
+            async with session.get(url, **request_options) as resp:
+                if resp.status != 200:
+                    logging.info("image proxy got status %s for %s", resp.status, url)
+                    return web.Response(status=502, text="image is unavailable")
+                content_type = resp.headers.get("Content-Type", "image/jpeg")
+                if not content_type.split(";")[0].strip().startswith("image/"):
+                    return web.Response(status=502, text="upstream did not return an image")
+                try:
+                    content_length = int(resp.headers.get("Content-Length") or 0)
+                except ValueError:
+                    content_length = 0
+                if content_length > MAX_PROXY_IMAGE_BYTES:
                     return web.Response(status=413, text="image too large")
-                chunks.append(chunk)
-            body = b"".join(chunks)
-            content_type = resp.headers.get("Content-Type", "image/jpeg")
+                chunks: list[bytes] = []
+                total = 0
+                async for chunk in resp.content.iter_chunked(64 * 1024):
+                    total += len(chunk)
+                    if total > MAX_PROXY_IMAGE_BYTES:
+                        return web.Response(status=413, text="image too large")
+                    chunks.append(chunk)
+                body = b"".join(chunks)
+        except (ClientError, TimeoutError):
+            logging.warning("image proxy request to %s failed", url, exc_info=True)
+            return web.Response(status=502, text="image is unavailable")
         return web.Response(
             body=body,
             headers={
@@ -2058,6 +2099,7 @@ async def create_web_app(
     app.router.add_get("/", webapp_page)
     app.router.add_get("/oauth/shikimori/callback", shikimori_callback)
     app.router.add_static("/static/", WEBAPP_STATIC_DIR, name="static")
+    app.on_response_prepare.append(cache_static_assets)
     app.router.add_post("/api/shikimori/authorize", shikimori_authorize_api)
     app.router.add_get("/api/shikimori/dashboard", shikimori_dashboard_api)
     app.router.add_get("/api/shikimori/animes/{anime_id:[0-9]+}", shikimori_anime_details_api)
@@ -2070,8 +2112,8 @@ async def create_web_app(
     app.router.add_post("/api/shikimori/logout", shikimori_logout_api)
     app.router.add_get("/api/search", search_api)
     app.router.add_get("/api/trending", trending_api)
-    app.router.add_get("/api/anime/{anime_id}/genres", genres_api)
-    app.router.add_get("/api/anime/{anime_id}/posters", posters_api)
+    app.router.add_get("/api/anime/{anime_id:[0-9]+}/genres", genres_api)
+    app.router.add_get("/api/anime/{anime_id:[0-9]+}/posters", posters_api)
     app.router.add_get("/api/image", image_proxy)
     app.router.add_post("/api/rendered", save_rendered)
     app.router.add_get("/rendered/{card_id:[A-Za-z0-9-]+}.jpg", rendered_jpeg)
@@ -2099,7 +2141,7 @@ async def main() -> None:
         try:
             await bot.set_chat_menu_button(
                 menu_button=MenuButtonWebApp(
-                    text="Карточки", web_app=WebAppInfo(url=webapp_url(settings))
+                    text="Shikizilla", web_app=WebAppInfo(url=webapp_url(settings))
                 )
             )
         except Exception:

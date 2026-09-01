@@ -761,16 +761,24 @@ def test_webapp_rejects_unauthenticated_requests_and_upload_failures(tmp_path: P
                     "connected": False,
                     **details_payload,
                 }
-                assert (await client.get("/static/ds/styles.css")).status == 200
+                tokens = await client.get("/static/ds/glepzilla.css")
+                assert tokens.status == 200
+                assert "--gz-void" in await tokens.text()
+                assert tokens.headers["Cache-Control"] == (
+                    "public, max-age=31536000, immutable"
+                )
+                assert (await client.get("/static/fonts/fonts.css")).status == 200
+                assert (await client.get("/static/fonts/prata-latin.woff2")).status == 200
                 assert (await client.get("/static/webapp.css")).status == 200
                 assert (await client.get("/static/webapp.js")).status == 200
                 webapp = await client.get("/")
                 assert webapp.status == 200
                 html = await webapp.text()
                 assert webapp.headers["Cache-Control"] == "no-store"
-                assert "/static/ds/_ds_bundle.js?v=" not in html
-                assert "/static/ds/_ds_bundle.css?v=" not in html
+                # Brand typefaces are served from this origin, never from a CDN.
                 assert "fonts.googleapis.com" not in html
+                assert "/static/fonts/fonts.css?v=" in html
+                assert "/static/ds/glepzilla.css?v=" in html
                 assert "/static/vendor/preact.min.js?v=" in html
                 assert "/static/vendor/preact-hooks.umd.js?v=" in html
                 assert "/static/webapp.css?v=" in html
@@ -778,6 +786,10 @@ def test_webapp_rejects_unauthenticated_requests_and_upload_failures(tmp_path: P
                 assert "{{ASSET_VERSION}}" not in html
                 assert (await client.get("/webapp")).status == 404
                 assert (await client.get("/rendered/card.json")).status == 404
+                # Non-ASCII digits pass str.isdigit() but not int(); the route
+                # pattern has to reject them before the handler sees them.
+                assert (await client.get("/api/anime/\u00b2/posters")).status == 404
+                assert (await client.get("/api/anime/\u00b2/genres")).status == 404
 
                 assert (await client.post("/api/rendered")).status == 401
             finally:

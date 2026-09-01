@@ -1,0 +1,55 @@
+/* glepzilla design system — the terminal look.
+   Source: glepzilla-homepage/src/pages/index.astro ("Glepzilla Terminal"
+   landing, commit "feat: rebuild homepage as the terminal figlet landing")
+   and the moss/stone palette its aurora background draws from.
+   Values here are copied from the site. Product styling lives in webapp.css. */
+
+:root {
+  /* ---- surfaces ------------------------------------------------------- */
+  --gz-void: #070906;                    /* page behind the shell */
+  --gz-shell: #0b0e0a;                   /* the terminal shell itself */
+  --gz-panel: rgba(6, 8, 6, .92);        /* terminal window */
+  --gz-titlebar: rgba(20, 24, 19, .9);
+  --gz-tile: rgba(20, 24, 19, .62);
+  --gz-tile-hover: rgba(38, 51, 27, .55);
+
+  /* ---- hairlines ------------------------------------------------------ */
+  --gz-line: rgba(233, 240, 226, .1);
+  --gz-line-soft: rgba(233, 240, 226, .08);
+  --gz-line-moss: rgba(143, 187, 95, .24);
+  --gz-line-moss-strong: rgba(143, 187, 95, .45);
+
+  /* ---- text ----------------------------------------------------------- */
+  --gz-text: #eef1e9;
+  --gz-text-muted: #a8b0a0;
+  --gz-text-faint: #737b6c;
+  --gz-text-dim: #545c4e;
+
+  /* ---- moss ----------------------------------------------------------- */
+  --gz-moss: #8fbb5f;                    /* the accent */
+  --gz-moss-bright: #b9d977;             /* hover / highlight */
+  --gz-moss-mid: #74964a;
+  --gz-moss-deep: #4e7030;
+  --gz-teal: #2f5a46;
+
+  /* ---- type ----------------------------------------------------------- */
+  --gz-font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
+  --gz-font-label: 'Martian Mono', ui-monospace, monospace;  /* tiny uppercase */
+  --gz-font-art: 'JetBrains Mono', ui-monospace, monospace;  /* ASCII marks */
+  --gz-font-title: Prata, Georgia, serif;
+  --gz-font-prose: Literata, Georgia, serif;
+
+  --gz-label-tracking: -.02em;
+
+  /* ---- shape ---------------------------------------------------------- */
+  --gz-radius-shell: 12px;
+  --gz-radius-card: 10px;
+  --gz-radius-pill: 999px;
+  --gz-shadow-card: 0 30px 70px -30px rgba(0, 0, 0, .85);
+  --gz-glow-moss: 0 0 18px rgba(143, 187, 95, .45), 0 0 46px rgba(143, 187, 95, .18);
+
+  /* ---- motion --------------------------------------------------------- */
+  --gz-motion-fast: 160ms;
+  --gz-motion-base: 420ms;
+  --gz-ease-out: cubic-bezier(.22, 1, .36, 1);
+}
