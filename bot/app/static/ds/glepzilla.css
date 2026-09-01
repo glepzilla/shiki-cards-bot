@@ -1,86 +1,55 @@
-/* glepzilla design system — vendored tokens.
-   Source: glepzilla-homepage/kit/glepzilla-design-system/tokens/{colors,typography,spacing}.css
-   Keep this file a verbatim copy of the upstream tokens. Product-specific values
-   belong in webapp.css, never here. */
+/* glepzilla design system — the terminal look.
+   Source: glepzilla-homepage/src/pages/index.astro ("Glepzilla Terminal"
+   landing, commit "feat: rebuild homepage as the terminal figlet landing")
+   and the moss/stone palette its aurora background draws from.
+   Values here are copied from the site. Product styling lives in webapp.css. */
 
 :root {
-  /* forest — dark surfaces */
-  --gz-forest-950: #0f1709;
-  --gz-forest-900: #141f0e; /* page background */
-  --gz-forest-800: #1f2f15; /* tile */
-  --gz-forest-700: #2b3d24; /* raised tile */
-  /* moss — green accents */
-  --gz-moss-900: #23361a;
-  --gz-moss-700: #3f5330;
-  --gz-moss-600: #5a7a3c;
-  --gz-moss-400: #8faf6a;
-  /* paper — cream "paper" */
-  --gz-paper-50: #f6f2e7;
-  --gz-paper-100: #f2ecd9;
-  --gz-paper-300: #e2dbc4;
-  /* sage — muted text on dark */
-  --gz-sage-200: #dfe7cf;
-  --gz-sage-300: #b9c4a8;
-  --gz-sage-500: #8a9478;
-  /* ink — text on paper */
-  --gz-ink-900: #22301a;
-  --gz-ink-700: #3a4a2f;
-  --gz-ink-500: #5a6a4d;
-  /* accent — reserved for the sticker, never a second brand colour */
-  --gz-amber-400: #e8b93c;
+  /* ---- surfaces ------------------------------------------------------- */
+  --gz-void: #070906;                    /* page behind the shell */
+  --gz-shell: #0b0e0a;                   /* the terminal shell itself */
+  --gz-panel: rgba(6, 8, 6, .92);        /* terminal window */
+  --gz-titlebar: rgba(20, 24, 19, .9);
+  --gz-tile: rgba(20, 24, 19, .62);
+  --gz-tile-hover: rgba(38, 51, 27, .55);
 
-  /* semantic aliases */
-  --gz-bg: var(--gz-forest-900);
-  --gz-surface-paper: var(--gz-paper-50);
-  --gz-surface-tile: var(--gz-forest-800);
-  --gz-surface-tile-raised: var(--gz-forest-700);
-  --gz-border-paper: var(--gz-paper-300);
-  --gz-border-tile: rgba(242, 236, 217, .16);
-  --gz-text-on-dark: var(--gz-paper-100);
-  --gz-text-muted-on-dark: var(--gz-sage-300);
-  --gz-text-faint: var(--gz-sage-500);
-  --gz-text-on-paper: var(--gz-ink-900);
-  --gz-text-body-on-paper: var(--gz-ink-700);
-  --gz-accent: var(--gz-amber-400);
-  --gz-link-on-paper: var(--gz-moss-700);
-  --gz-link-on-dark: var(--gz-sage-200);
+  /* ---- hairlines ------------------------------------------------------ */
+  --gz-line: rgba(233, 240, 226, .1);
+  --gz-line-soft: rgba(233, 240, 226, .08);
+  --gz-line-moss: rgba(143, 187, 95, .24);
+  --gz-line-moss-strong: rgba(143, 187, 95, .45);
 
-  --gz-font-display: 'Lora', Georgia, serif;              /* headings, titles */
-  --gz-font-sans: 'Manrope', system-ui, sans-serif;       /* body text, UI */
-  --gz-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace; /* labels, dates */
+  /* ---- text ----------------------------------------------------------- */
+  --gz-text: #eef1e9;
+  --gz-text-muted: #a8b0a0;
+  --gz-text-faint: #737b6c;
+  --gz-text-dim: #545c4e;
 
-  --gz-text-h1: 58px;
-  --gz-text-h2: 42px;
-  --gz-text-title: 23px;
-  --gz-text-body: 17px;
-  --gz-text-ui: 15px;
-  --gz-text-small: 14px;
-  --gz-text-meta: 12.5px;
-  --gz-eyebrow-tracking: .12em;
-  --gz-leading-body: 1.7;
-  --gz-leading-tight: 1.1;
+  /* ---- moss ----------------------------------------------------------- */
+  --gz-moss: #8fbb5f;                    /* the accent */
+  --gz-moss-bright: #b9d977;             /* hover / highlight */
+  --gz-moss-mid: #74964a;
+  --gz-moss-deep: #4e7030;
+  --gz-teal: #2f5a46;
 
-  --gz-space-1: 6px;
-  --gz-space-2: 10px;
-  --gz-space-3: 14px;
-  --gz-space-4: 18px;
-  --gz-space-5: 24px;
-  --gz-space-6: 32px;
-  --gz-space-7: 44px;
-  --gz-space-8: 56px;
+  /* ---- type ----------------------------------------------------------- */
+  --gz-font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
+  --gz-font-label: 'Martian Mono', ui-monospace, monospace;  /* tiny uppercase */
+  --gz-font-art: 'JetBrains Mono', ui-monospace, monospace;  /* ASCII marks */
+  --gz-font-title: Prata, Georgia, serif;
+  --gz-font-prose: Literata, Georgia, serif;
 
-  --gz-radius-sm: 6px;     /* sticker */
-  --gz-radius-tile: 18px;  /* dark tile */
-  --gz-radius-card: 22px;  /* paper card */
+  --gz-label-tracking: -.02em;
+
+  /* ---- shape ---------------------------------------------------------- */
+  --gz-radius-shell: 12px;
+  --gz-radius-card: 10px;
   --gz-radius-pill: 999px;
+  --gz-shadow-card: 0 30px 70px -30px rgba(0, 0, 0, .85);
+  --gz-glow-moss: 0 0 18px rgba(143, 187, 95, .45), 0 0 46px rgba(143, 187, 95, .18);
 
-  --gz-shadow-paper: 0 30px 70px -20px rgba(0, 0, 0, .55);
-  --gz-shadow-tile: 0 24px 55px -18px rgba(0, 0, 0, .5);
-  --gz-shadow-sticker: 0 6px 18px rgba(0, 0, 0, .35);
-
-  --gz-rot-a: -1.2deg;
-  --gz-rot-b: 1.6deg;
-  --gz-rot-c: -.8deg;
-  --gz-rot-d: .6deg;
-  --gz-rot-sticker: 6deg;
+  /* ---- motion --------------------------------------------------------- */
+  --gz-motion-fast: 160ms;
+  --gz-motion-base: 420ms;
+  --gz-ease-out: cubic-bezier(.22, 1, .36, 1);
 }

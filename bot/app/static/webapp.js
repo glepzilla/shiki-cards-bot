@@ -2,8 +2,8 @@
   'use strict';
 
   const tg = window.Telegram?.WebApp;
-  // glepzilla has one look: dark forest. --gz-forest-900 from the design system.
-  const BRAND_BACKGROUND = '#141f0e';
+  // The terminal landing's page colour, --gz-void in the design system.
+  const BRAND_BACKGROUND = '#070906';
   const hasTelegramAuth = Boolean(tg?.initData);
   const telegramPlatform = String(tg?.platform || 'unknown').toLowerCase();
   const inTelegram = hasTelegramAuth || telegramPlatform !== 'unknown';
@@ -63,10 +63,7 @@
     presets: { classic: 'Classic', aurora: 'Aurora', glass: 'Glass', neon: 'Neon', vhs: 'VHS', manga: 'Manga', mag: 'Magazine', polaroid: 'Polaroid', print: 'Print' },
   };
   document.documentElement.lang = RU ? 'ru' : 'en';
-  const PRESETS = [
-    ['classic', '#23361a'], ['aurora', '#768c4b'], ['glass', '#a5b992'], ['neon', '#22a06b'], ['vhs', '#53664a'],
-    ['manga', '#a7473f'], ['mag', '#d49a35'], ['polaroid', '#d6ccba'], ['print', '#79654c'],
-  ];
+  const PRESETS = ['classic', 'aurora', 'glass', 'neon', 'vhs', 'manga', 'mag', 'polaroid', 'print'];
   // Static previews keep the picker instant; the full canvas is still the source of truth.
   const PRESET_PREVIEWS = {
     classic: 'linear-gradient(145deg,#10220e 0 58%,#7b9a5b 58%)', aurora: 'radial-gradient(circle at 75% 18%,#c5d7ae,#516e3b 72%)',
@@ -88,8 +85,11 @@
     print: { score: [668, 752], genres: { minY: 790, maxY: 990, alternateY: 960 } },
   };
   const HISTORY_KEY = 'shiki:recent';
+  const GZ_MARK = '  __ _ ____\n / _` |_  /\n| (_| |/ / \n \\__, /___|\n |___/     ';
   const SRC_BADGE = { shikimori: 'SHIKI', anilist: 'AL', tenrai: 'TENRAI' };
   function statusLabel(status) { return status ? T.statuses[status] || null : null; }
+  // In a list only an unfinished show's status tells the reader anything.
+  function liveStatusLabel(status) { return status === 'ongoing' || status === 'anons' ? statusLabel(status) : null; }
   function ratingLabel(rating) { return rating ? String(rating).replace(/_/g, '-').toUpperCase() : null; }
   const { createElement: h, Fragment } = window.preact;
   const { useCallback, useEffect, useRef, useState } = window.preactHooks;
@@ -99,9 +99,25 @@
   function Button({ children, className = '', variant = 'primary', size, loading, disabled, ...props }) {
     return h('button', { ...props, disabled: disabled || loading, className: `gz-button gz-button--${variant}${size ? ` gz-button--${size}` : ''}${className ? ` ${className}` : ''}` }, loading ? h('span', { className: 'gz-button-spinner', 'aria-hidden': true }) : children);
   }
-  // variant maps onto the design system's two surfaces: dark tile or cream paper.
-  function Card({ children, className = '', hoverable, variant = 'tile' }) {
-    return h('div', { className: `gz-card gz-card--${variant}${hoverable ? ' gz-card--hoverable' : ''}${className ? ` ${className}` : ''}` }, children);
+  // variant picks the surface: a plain tile, or a terminal window with a titlebar.
+  function Card({ children, className = '', hoverable, variant = 'tile', path }) {
+    return h('div', { className: `gz-card gz-card--${variant}${hoverable ? ' gz-card--hoverable' : ''}${className ? ` ${className}` : ''}` }, [
+      path ? h('div', { className: 'card-titlebar', key: 'bar' }, [
+        h('span', { className: 'card-dot', key: 'd1' }), h('span', { className: 'card-dot', key: 'd2' }),
+        h('span', { className: 'card-dot card-dot--accent', key: 'd3' }),
+        h('span', { className: 'card-path', key: 'path' }, path),
+      ]) : null,
+      path ? h('div', { className: 'card-body', key: 'body' }, children) : children,
+    ]);
+  }
+  function ScreenHeader({ title, tagline }) {
+    return h('header', { className: 'app-header' }, [
+      h('pre', { className: 'gz-mark', key: 'mark', 'aria-hidden': true }, GZ_MARK),
+      h('div', { className: 'header-copy', key: 'copy' }, [
+        h(Heading, { as: 'h1', key: 'title' }, title),
+        h('p', { key: 'tagline' }, tagline),
+      ]),
+    ]);
   }
   function Heading({ as = 'h2', children, className = '', ...props }) { return h(as, { ...props, className: `gz-heading ${className}`.trim() }, children); }
   function Input({ className = '', ...props }) { return h('input', { ...props, className: `gz-input${className ? ` ${className}` : ''}` }); }
@@ -159,7 +175,6 @@
     finally { field.remove(); }
   }
   function icon(kind) {
-    if (kind === 'search') return h('svg', { width: 17, height: 17, viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': true }, h('circle', { cx: 11, cy: 11, r: 6, stroke: 'currentColor', strokeWidth: 2 }), h('path', { d: 'm16 16 4 4', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' }));
     if (kind === 'account') return h('svg', { width: 19, height: 19, viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': true }, h('circle', { cx: 12, cy: 8, r: 3.2, stroke: 'currentColor', strokeWidth: 1.8 }), h('path', { d: 'M5 20c.7-3.4 3-5.2 7-5.2s6.3 1.8 7 5.2', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' }));
     if (kind === 'cards') return h('svg', { width: 19, height: 19, viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': true }, h('rect', { x: 4, y: 4, width: 16, height: 16, rx: 3, stroke: 'currentColor', strokeWidth: 1.8 }), h('path', { d: 'M8 9h8M8 14h5', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' }));
     if (kind === 'home') return h('svg', { width: 19, height: 19, viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': true }, [h('path', { key: 'roof', d: 'm4 11 8-7 8 7', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round' }), h('path', { key: 'body', d: 'M6.5 9.5V20h11V9.5M10 20v-6h4v6', stroke: 'currentColor', strokeWidth: 1.8, strokeLinejoin: 'round' })]);
@@ -255,36 +270,38 @@
       if (preset === 'glass') { context.fillStyle = 'rgba(237,240,229,.18)'; rounded(context, 24, 665, W - 48, 360, 24); context.fill(); }
       if (preset === 'neon') { context.strokeStyle = '#8bd74c'; context.lineWidth = 5; rounded(context, 20, 20, W - 40, H - 40, 24); context.stroke(); }
       if (preset === 'vhs') { context.fillStyle = 'rgba(0,0,0,.16)'; for (let y = 0; y < H; y += 7) context.fillRect(0, y, W, 2); }
-      if (preset === 'mag') { context.textAlign = 'center'; context.font = '700 64px Lora, serif'; context.fillStyle = '#fff'; context.fillText('SHIKIZILLA', W / 2, 100); context.textAlign = 'left'; }
+      if (preset === 'mag') { context.textAlign = 'center'; context.font = '400 64px Prata, Georgia, serif'; context.fillStyle = '#fff'; context.fillText('SHIKIZILLA', W / 2, 100); context.textAlign = 'left'; }
     }
-    context.fillStyle = foreground; context.font = '700 50px Lora, Georgia, serif'; context.textBaseline = 'top';
+    context.fillStyle = foreground; context.font = '400 50px Prata, Georgia, serif'; context.textBaseline = 'top';
     let y = contentY;
     for (const line of lines(context, title, contentWidth, 3)) { context.fillText(line, contentX, y); y += 62; }
-    if (subtitle) { context.font = '500 24px Manrope, sans-serif'; context.globalAlpha = .78; context.fillText(lines(context, subtitle, contentWidth, 1)[0] || '', contentX, y + 4); context.globalAlpha = 1; y += 42; }
-    if (meta) { context.font = '600 24px Manrope, sans-serif'; context.globalAlpha = .86; context.fillText(meta, contentX, y + 8); context.globalAlpha = 1; y += 48; }
+    if (subtitle) { context.font = '400 24px Literata, Georgia, serif'; context.globalAlpha = .78; context.fillText(lines(context, subtitle, contentWidth, 1)[0] || '', contentX, y + 4); context.globalAlpha = 1; y += 42; }
+    if (meta) { context.font = '500 24px "IBM Plex Mono", monospace'; context.globalAlpha = .86; context.fillText(meta, contentX, y + 8); context.globalAlpha = 1; y += 48; }
     const scoreText = options.score && anime.score ? `★ ${anime.score}` : '';
     let scoreBox = null;
     if (scoreText) {
-      context.font = '700 27px Manrope, sans-serif'; context.fillStyle = preset === 'print' || preset === 'manga' || preset === 'polaroid' || preset === 'aurora' ? accent : '#e5ffb8'; context.textAlign = 'right';
+      context.font = '500 27px "IBM Plex Mono", monospace'; context.fillStyle = preset === 'print' || preset === 'manga' || preset === 'polaroid' || preset === 'aurora' ? accent : '#e5ffb8'; context.textAlign = 'right';
       const scoreWidth = context.measureText(scoreText).width; const [scoreX, scoreY] = layout.score;
       scoreBox = { left: scoreX - scoreWidth, top: scoreY, right: scoreX, bottom: scoreY + 30 };
       context.fillText(scoreText, scoreX, scoreY); context.textAlign = 'left';
     }
     if (options.genres && anime.genres?.length) {
-      context.font = '600 19px Manrope, sans-serif';
+      context.font = '500 19px "IBM Plex Mono", monospace';
       const genreText = anime.genres.slice(0, 3).join('  ·  '); const genreWidth = context.measureText(genreText).width;
       let genreY = Math.min(Math.max(y + 8, layout.genres.minY), layout.genres.maxY);
       const collides = scoreBox && contentX < scoreBox.right && contentX + genreWidth > scoreBox.left && genreY < scoreBox.bottom && genreY + 24 > scoreBox.top;
       if (collides) genreY = layout.genres.alternateY;
       context.fillStyle = foreground; context.globalAlpha = .78; context.fillText(genreText, contentX, genreY); context.globalAlpha = 1;
     }
-    if (options.mark) { context.font = '700 17px Manrope, sans-serif'; context.fillStyle = preset === 'print' || preset === 'manga' || preset === 'polaroid' || preset === 'aurora' ? accent : 'rgba(255,255,255,.62)'; context.fillText('SHIKIZILLA', contentX, H - 44); }
+    if (options.mark) { context.font = '500 15px "Martian Mono", monospace'; context.fillStyle = preset === 'print' || preset === 'manga' || preset === 'polaroid' || preset === 'aurora' ? accent : 'rgba(255,255,255,.62)'; context.fillText('SHIKIZILLA', contentX, H - 44); }
     context.textBaseline = 'alphabetic';
   }
 
   const brandFonts = Promise.all([
-    document.fonts?.load?.('700 50px Lora'),
-    document.fonts?.load?.('600 24px Manrope'),
+    document.fonts?.load?.('400 50px Prata'),
+    document.fonts?.load?.('400 24px Literata'),
+    document.fonts?.load?.('500 24px "IBM Plex Mono"'),
+    document.fonts?.load?.('500 15px "Martian Mono"'),
   ].filter(Boolean)).catch(() => undefined);
 
   async function renderCard(canvas, anime, poster, preset, titleLanguage, options) {
@@ -294,7 +311,7 @@
 
   function SearchResult({ anime, onPick }) {
     const title = anime.title || anime.name;
-    const status = statusLabel(anime.status);
+    const status = liveStatusLabel(anime.status);
     return h('button', { className: 'anime-result', type: 'button', onClick: () => onPick(anime) },
       h(Card, { hoverable: true },
         h('div', { className: 'result-content' },
@@ -339,8 +356,8 @@
     const pick = useCallback((anime) => { storeHistory(query.trim()); setHistory(readHistory()); onPick(anime); }, [query, onPick]);
     const activeItems = query.trim().length >= 2 ? results : trending || [];
     return h('main', { className: 'app-shell app-shell--nav' },
-      h('header', { className: 'app-header' }, h('div', { className: 'brand-mark', 'aria-hidden': true }, h('img', { src: logoUrl, alt: '' })), h('div', { className: 'header-copy' }, h(Heading, { as: 'h1' }, cardMode ? T.cards : T.discover), h('p', null, cardMode ? T.cardsTagline : T.discoverTagline))),
-      h('div', { className: 'search-panel' }, h('div', { className: 'search-field' }, h('span', { key: 'icon', className: 'search-icon', 'aria-hidden': true }, icon('search')), h(Input, { key: 'input', type: 'search', enterKeyHint: 'search', autoComplete: 'off', placeholder: T.placeholder, value: query, onChange: (event) => setQuery(event.target.value), 'aria-label': T.placeholder }), query && h(Button, { key: 'clear', className: 'clear-search', variant: 'ghost', size: 'sm', type: 'button', onClick: () => setQuery(''), 'aria-label': T.clear }, icon('close')))),
+      h(ScreenHeader, { title: cardMode ? T.cards : T.discover, tagline: cardMode ? T.cardsTagline : T.discoverTagline }),
+      h('div', { className: 'search-panel' }, h('div', { className: 'search-field' }, h('span', { key: 'prompt', className: 'search-prompt', 'aria-hidden': true }, '%'), h(Input, { key: 'input', type: 'search', enterKeyHint: 'search', autoComplete: 'off', placeholder: T.placeholder, value: query, onChange: (event) => setQuery(event.target.value), 'aria-label': T.placeholder }), query && h(Button, { key: 'clear', className: 'clear-search', variant: 'ghost', size: 'sm', type: 'button', onClick: () => setQuery(''), 'aria-label': T.clear }, icon('close')))),
       !query && history.length ? h('section', null, h('h2', { className: 'section-title' }, T.recent), h('div', { className: 'history' }, history.map((item) => h(Button, { key: item, variant: 'outline', size: 'sm', type: 'button', onClick: () => setQuery(item) }, item)))) : null,
       h('section', null, h('h2', { className: 'section-title' }, query ? T.search : T.trending), loading || (!query && trending === null) ? h('div', { className: 'loading-row' }, h(Spinner, null)) : error ? h(Alert, { variant: 'danger' }, error) : query && !activeItems.length ? h('div', { className: 'empty-state' }, h(Heading, { as: 'h3' }, T.noResults), h('p', null, T.empty)) : h('div', { className: 'result-list' }, activeItems.map((anime) => h(SearchResult, { key: `${anime.source}-${anime.id}`, anime, onPick: pick })))),
     );
@@ -382,8 +399,8 @@
   function DashboardFallback({ dashboard, loading, error, connecting, load, connect }) {
     if (loading) return h('div', { className: 'loading-row' }, h(Spinner, null));
     if (error) return h(Alert, { variant: 'danger' }, [h('p', { key: 'copy' }, error), h(Button, { key: 'retry', type: 'button', size: 'sm', variant: 'outline', onClick: () => load(true) }, T.retry)]);
-    if (!dashboard?.available) return h(Card, { className: 'connect-card', variant: 'paper' }, [h(Heading, { as: 'h2', key: 'title' }, T.myShikimori), h('p', { key: 'copy' }, T.configuredLater)]);
-    if (!dashboard.connected) return h(Card, { className: 'connect-card', variant: 'paper' }, [h('span', { className: 'connect-symbol', key: 'symbol', 'aria-hidden': true }, icon('account')), h(Heading, { as: 'h2', key: 'title' }, T.connectTitle), h('p', { key: 'copy' }, T.connectText), h(Button, { key: 'button', type: 'button', size: 'lg', loading: connecting, onClick: connect }, T.connect)]);
+    if (!dashboard?.available) return h(Card, { className: 'connect-card', variant: 'window', path: 'shikimori — offline' }, [h(Heading, { as: 'h2', key: 'title' }, T.myShikimori), h('p', { key: 'copy' }, T.configuredLater)]);
+    if (!dashboard.connected) return h(Card, { className: 'connect-card', variant: 'window', path: 'shikimori — auth' }, [h(Heading, { as: 'h2', key: 'title' }, T.connectTitle), h('p', { key: 'copy' }, T.connectText), h(Button, { key: 'button', type: 'button', size: 'lg', loading: connecting, onClick: connect }, T.connect)]);
     return null;
   }
 
@@ -406,10 +423,7 @@
     const ready = !loading && !error && dashboard?.available && dashboard.connected;
     const items = dashboard?.library?.[status] || (status === 'watching' ? dashboard?.watching : []) || [];
     return h('main', { className: 'app-shell app-shell--nav' }, [
-      h('header', { className: 'app-header', key: 'header' }, [
-        h('div', { className: 'brand-mark', key: 'mark', 'aria-hidden': true }, h('img', { src: logoUrl, alt: '' })),
-        h('div', { className: 'header-copy', key: 'copy' }, [h(Heading, { as: 'h1', key: 'title' }, T.library), h('p', { key: 'tagline' }, T.libraryTagline)]),
-      ]),
+      h(ScreenHeader, { title: T.library, tagline: T.libraryTagline, key: 'header' }),
       ready ? h('section', { className: 'dashboard-content', key: 'dashboard' }, [
         h('div', { className: 'status-tabs', role: 'tablist', 'aria-label': T.library, key: 'tabs' }, statuses.map(([id, label]) => h('button', { key: id, type: 'button', role: 'tab', 'aria-selected': status === id, className: status === id ? 'is-active' : '', onClick: () => setStatus(id) }, [h('span', { key: 'label' }, label), h('b', { key: 'count' }, dashboard.counts?.[id] || 0)]))),
         items.length ? h('div', { className: 'watch-list', key: 'list' }, items.map((anime) => {
@@ -442,7 +456,7 @@
     const profile = dashboard?.profile; const counts = dashboard?.counts || {}; const summary = dashboard?.summary || {};
     const stats = [[T.totalTitles, summary.total || 0], [T.watching, (counts.watching || 0) + (counts.rewatching || 0)], [T.completed, counts.completed || 0], [T.watchedEpisodes, summary.episodes || 0], [T.scoredTitles, summary.scored || 0], [T.friends, dashboard?.friends_count || 0]];
     return h('main', { className: 'app-shell app-shell--nav' }, [
-      h('header', { className: 'app-header', key: 'header' }, [h('div', { className: 'brand-mark', key: 'mark', 'aria-hidden': true }, h('img', { src: logoUrl, alt: '' })), h('div', { className: 'header-copy', key: 'copy' }, [h(Heading, { as: 'h1', key: 'title' }, T.account), h('p', { key: 'tagline' }, T.profileTagline)])]),
+      h(ScreenHeader, { title: T.account, tagline: T.profileTagline, key: 'header' }),
       ready ? h('section', { className: 'profile-content', key: 'content' }, [
         h(Card, { className: 'profile-card', key: 'profile' }, [profile?.avatar ? h('img', { className: 'profile-avatar profile-avatar--lg', src: proxyUrl(profile.avatar), alt: profile.nickname, key: 'avatar' }) : h('span', { className: 'profile-placeholder profile-avatar--lg', 'aria-hidden': true, key: 'avatar' }, icon('account')), h('div', { className: 'profile-card-copy', key: 'copy' }, [h('strong', { key: 'name' }, profile?.nickname), h('span', { key: 'service' }, 'Shikimori')]), h(Button, { className: 'refresh-button', type: 'button', variant: 'ghost', onClick: () => load(true), 'aria-label': T.refresh, key: 'refresh' }, icon('refresh'))]),
         h('div', { className: 'stats-grid', key: 'stats' }, stats.map(([label, value]) => h('div', { className: 'stat-card', key: label }, [h('strong', { key: 'value' }, value), h('span', { key: 'label' }, label)]))),
@@ -565,11 +579,11 @@
       'aria-label': `${T.poster}: ${SRC_BADGE[item.source] || 'IMG'} ${index + 1}`,
       'aria-pressed': poster === item.url,
     }, h('img', { src: proxyUrl(item.thumb || item.url), alt: '' }), h('span', { className: 'poster-source' }, SRC_BADGE[item.source] || 'IMG')));
-    const styleChoices = PRESETS.map(([id, color]) => h('button', {
+    const styleChoices = PRESETS.map((id) => h('button', {
       key: id, className: `style-choice${preset === id ? ' is-selected' : ''}`, type: 'button',
       onClick: () => { setPreset(id); tg?.HapticFeedback?.selectionChanged?.(); },
       'aria-pressed': preset === id,
-    }, h('span', { className: 'style-thumbnail', style: { background: PRESET_PREVIEWS[id] } }), h('span', { className: 'style-label' }, h('span', { className: 'style-dot', style: { background: color } }), T.presets[id])));
+    }, h('span', { className: 'style-thumbnail', style: { background: PRESET_PREVIEWS[id] } }), h('span', { className: 'style-label' }, T.presets[id])));
     const switches = [['score', T.score], ['genres', T.genres], ['mark', T.mark]].map(([id, label]) => h(Switch, {
       key: id, label, checked: options[id], onCheckedChange: (checked) => setOptions((current) => ({ ...current, [id]: checked })),
     }));
@@ -579,7 +593,7 @@
         h('div', { className: 'editor-title', key: 'title' }, [h(Heading, { as: 'h1', key: 'heading' }, displayTitle), h('p', { key: 'meta' }, metaLine(anime))]),
       ]),
       h('div', { className: 'editor-layout', key: 'layout' }, [
-        h(Card, { className: 'preview-card', variant: 'paper', key: 'preview' }, h('canvas', { className: 'card-canvas', ref: canvasRef, width: 720, height: 1080 })),
+        h(Card, { className: 'preview-card', variant: 'window', path: `shikizilla — ${anime.id}.jpg`, key: 'preview' }, h('canvas', { className: 'card-canvas', ref: canvasRef, width: 720, height: 1080 })),
         h('div', { className: 'editor-controls', key: 'controls' }, [
           h('section', { className: 'editor-section', key: 'style' }, [h('h2', { key: 'heading' }, T.style), h('div', { className: 'preset-carousel', key: 'choices' }, styleChoices)]),
           h('section', { className: 'editor-section', key: 'poster' }, [
@@ -647,7 +661,7 @@
     else screen = h(Editor, { anime: current.anime, onBack: pop, notify, key: `editor-${current.anime.id}` });
     const rootNames = ['home', 'library', 'cards', 'profile'];
     return h(Fragment, null, [
-      screen,
+      h('div', { className: 'terminal-page', key: 'page' }, h('div', { className: 'terminal-shell' }, screen)),
       rootNames.includes(current.name) ? h(BottomNavigation, { view: current.name, fullClient: inTelegram || inlineLaunch, onChange: (name) => setStack([{ name }]), key: 'navigation' }) : null,
       toast ? h('div', { className: 'toast', role: 'status', key: 'toast' }, toast) : null,
     ]);

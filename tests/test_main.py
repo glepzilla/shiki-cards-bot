@@ -763,12 +763,12 @@ def test_webapp_rejects_unauthenticated_requests_and_upload_failures(tmp_path: P
                 }
                 tokens = await client.get("/static/ds/glepzilla.css")
                 assert tokens.status == 200
-                assert "--gz-forest-900" in await tokens.text()
+                assert "--gz-void" in await tokens.text()
                 assert tokens.headers["Cache-Control"] == (
                     "public, max-age=31536000, immutable"
                 )
                 assert (await client.get("/static/fonts/fonts.css")).status == 200
-                assert (await client.get("/static/fonts/manrope-latin.woff2")).status == 200
+                assert (await client.get("/static/fonts/prata-latin.woff2")).status == 200
                 assert (await client.get("/static/webapp.css")).status == 200
                 assert (await client.get("/static/webapp.js")).status == 200
                 webapp = await client.get("/")

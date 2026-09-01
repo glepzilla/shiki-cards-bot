@@ -456,31 +456,49 @@ def telegram_main_webapp_url(bot_username: str) -> str | None:
 
 
 def oauth_callback_response(message: str, success: bool) -> web.Response:
-    """Standalone confirmation page, styled with the glepzilla design system."""
+    """Standalone confirmation page, styled like the glepzilla terminal landing."""
     title = "Shikimori подключён" if success else "Вход в Shikimori"
-    dot = "#8faf6a" if success else "#c96a5a"
+    status = "ok" if success else "failed"
+    dot = "#8fbb5f" if success else "#c96a5a"
     document = f"""<!doctype html>
 <html lang="ru"><meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta name="theme-color" content="#141f0e" />
+<meta name="theme-color" content="#070906" />
 <title>{html.escape(title)}</title>
 <link rel="stylesheet" href="/static/fonts/fonts.css" />
 <body>
-<main><h1>{html.escape(title)}<span>.</span></h1><p>{html.escape(message)}</p>
-<button onclick="window.close()">Закрыть</button></main>
+<main>
+<div class="bar"><i></i><i></i><i class="on"></i><span>shikimori — auth</span></div>
+<div class="body">
+<p class="prompt">shikimori auth --callback <b>{status}</b></p>
+<h1>{html.escape(title)}</h1>
+<p class="copy">{html.escape(message)}</p>
+<button onclick="window.close()">Закрыть</button>
+</div>
+</main>
 <style>
 :root{{color-scheme:dark}}
-body{{margin:0;min-height:100svh;background:#141f0e;color:#3a4a2f;
-font:500 15px/1.7 Manrope,system-ui,sans-serif}}
-main{{max-width:26rem;margin:14vh auto;padding:32px 24px;border:1px solid #e2dbc4;
-border-radius:22px;background:#f6f2e7;box-shadow:0 30px 70px -20px rgba(0,0,0,.55);
-transform:rotate(-.8deg);text-align:center}}
-h1{{margin:0;color:#22301a;font:500 23px/1.2 Lora,Georgia,serif}}
-h1 span{{color:{dot}}}
-p{{margin:10px 0 24px}}
-button{{min-height:44px;padding:10px 18px;border:1px solid #5a7a3c;border-radius:10px;
-background:#5a7a3c;color:#f6f2e7;font:600 15px Manrope,system-ui,sans-serif;cursor:pointer}}
-button:hover{{background:#3f5330;border-color:#8faf6a}}
+body{{margin:0;min-height:100svh;background:#070906;color:#eef1e9;
+font:400 14px/1.7 'IBM Plex Mono',ui-monospace,monospace}}
+main{{max-width:27rem;margin:14vh auto;border:1px solid rgba(143,187,95,.24);
+border-radius:10px;background:rgba(6,8,6,.92);box-shadow:0 30px 70px -30px rgba(0,0,0,.85);
+overflow:hidden}}
+.bar{{display:flex;align-items:center;gap:8px;padding:11px 14px;
+border-bottom:1px solid rgba(233,240,226,.08);background:rgba(20,24,19,.9)}}
+.bar i{{width:9px;height:9px;border-radius:50%;background:#545c4e}}
+.bar i.on{{background:{dot}}}
+.bar span{{margin-left:6px;color:#737b6c;font-size:11.5px}}
+.body{{padding:22px}}
+.prompt{{margin:0;color:#737b6c;font-size:12.5px}}
+.prompt::before{{content:'% ';color:#8fbb5f}}
+.prompt b{{color:{dot};font-weight:400}}
+h1{{margin:14px 0 8px;font:400 20px/1.25 Prata,Georgia,serif}}
+.copy{{margin:0 0 22px;color:#a8b0a0;font-family:Literata,Georgia,serif;font-size:13.5px}}
+button{{min-height:44px;padding:10px 18px;border:1px solid #74964a;border-radius:10px;
+background:#74964a;color:#070906;
+font:500 12.5px 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.04em;
+text-transform:uppercase;cursor:pointer}}
+button:hover{{background:#8fbb5f;border-color:#b9d977}}
 </style>
 </body></html>"""
     return web.Response(
