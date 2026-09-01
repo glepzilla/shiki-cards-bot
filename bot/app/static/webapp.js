@@ -2,7 +2,8 @@
   'use strict';
 
   const tg = window.Telegram?.WebApp;
-  const systemTheme = window.matchMedia('(prefers-color-scheme: dark)');
+  // glepzilla has one look: dark forest. --gz-forest-900 from the design system.
+  const BRAND_BACKGROUND = '#141f0e';
   const hasTelegramAuth = Boolean(tg?.initData);
   const telegramPlatform = String(tg?.platform || 'unknown').toLowerCase();
   const inTelegram = hasTelegramAuth || telegramPlatform !== 'unknown';
@@ -21,7 +22,7 @@
   const langCode = (tg?.initDataUnsafe?.user?.language_code || navigator.language || 'ru').toLowerCase();
   const RU = langCode.startsWith('ru');
   const T = RU ? {
-    tagline: 'Аниме, списки и карточки', placeholder: 'Найти аниме', search: 'Результаты', discover: 'Обзор', library: 'Список', account: 'Профиль', cards: 'Карточки', loading: 'Загрузка', navigation: 'Основная навигация',
+    placeholder: 'Найти аниме', search: 'Результаты', discover: 'Обзор', library: 'Список', account: 'Профиль', cards: 'Карточки', loading: 'Загрузка', navigation: 'Основная навигация',
     discoverTagline: 'Следите за аниме и открывайте новое', libraryTagline: 'Вся ваша библиотека Shikimori', cardsTagline: 'Создайте карточку из любого аниме', profileTagline: 'Аккаунт и статистика',
     recent: 'Недавние', trending: 'Популярное', noResults: 'Ничего не найдено',
     searchError: 'Поиск временно недоступен', retry: 'Повторить', back: 'К поиску', clear: 'Очистить поиск',
@@ -30,18 +31,18 @@
     share: 'Отправить карточку', download: 'Скачать JPEG', uploading: 'Загружаем…',
     empty: 'Проверьте название или попробуйте другой запрос.', posterError: 'Не удалось загрузить постер.',
     shareError: 'Не получилось отправить карточку. Попробуйте ещё раз.', copied: 'Скопировано: ', inlineCopied: 'ID карточки скопирован: ',
-    eps: 'эп.', ongoing: 'онгоинг', anons: 'анонс', exclusive: 'ЭКСКЛЮЗИВ', loadingPosters: 'Загружаем варианты…',
+    eps: 'эп.', loadingPosters: 'Загружаем варианты…',
     tenraiUnavailable: 'Часть постеров сейчас недоступна.',
     myShikimori: 'Мой Shikimori', connectTitle: 'Подключите Shikimori', connectText: 'Ваш список, прогресс и оценки друзей — в одном месте.',
     connect: 'Подключить Shikimori', configuredLater: 'Shikimori пока недоступен.', refresh: 'Обновить', logout: 'Выйти',
-    watching: 'Смотрю', rewatching: 'Пересматриваю', planned: 'Запланировано', completed: 'Просмотрено', onHold: 'Отложено', dropped: 'Брошено', progress: 'Серии', friends: 'Друзья', friendScores: 'Друзья', noFriendScores: 'Нет оценок',
-    watchAniliberty: 'Смотреть', episodeWatched: 'Отметить серию', episodeUpdating: 'Сохраняем…', episodeUpdateError: 'Не удалось обновить прогресс. Попробуйте ещё раз.',
+    watching: 'Смотрю', rewatching: 'Пересматриваю', planned: 'Запланировано', completed: 'Просмотрено', onHold: 'Отложено', dropped: 'Брошено', progress: 'Серии', friends: 'Друзья', friendScores: 'Друзья', watchAniliberty: 'Смотреть', episodeWatched: 'Отметить серию', episodeUpdating: 'Сохраняем…', episodeUpdateError: 'Не удалось обновить прогресс. Попробуйте ещё раз.',
     dashboardError: 'Не удалось загрузить список. Попробуйте ещё раз.', noWatching: 'В этом разделе пока ничего нет.', connectHint: 'Подключите Shikimori в профиле, чтобы управлять списком.',
     totalTitles: 'Всего', scoredTitles: 'С оценкой', watchedEpisodes: 'Серий', openProfile: 'Открыть Shikimori', libraryScore: 'Ваша оценка',
-    details: 'Об аниме', addPlanned: 'Запланировать', addWatching: 'Смотрю', changeStatus: 'Статус', removeFromList: 'Убрать из списка', save: 'Сохранить', saving: 'Сохраняем…', rateScore: 'Моя оценка', noScore: 'Без оценки', studios: 'Студия', runtime: 'мин. на серию', adult: 'Возрастной рейтинг', editCard: 'Сделать карточку', rateUpdateError: 'Не удалось сохранить изменения. Попробуйте ещё раз.',
+    addPlanned: 'Запланировать', addWatching: 'Смотрю', changeStatus: 'Статус', removeFromList: 'Убрать из списка', save: 'Сохранить', saving: 'Сохраняем…', rateScore: 'Моя оценка', noScore: 'Без оценки', studios: 'Студия', runtime: 'мин. на серию', adult: 'Возрастной рейтинг', editCard: 'Сделать карточку', rateUpdateError: 'Не удалось сохранить изменения. Попробуйте ещё раз.',
+    statuses: { released: 'вышло', latest: 'вышло' },
     presets: { classic: 'Классика', aurora: 'Аврора', glass: 'Стекло', neon: 'Неон', vhs: 'VHS', manga: 'Манга', mag: 'Журнал', polaroid: 'Полароид', print: 'Принт' },
   } : {
-    tagline: 'Anime, lists, and cards', placeholder: 'Find anime', search: 'Results', discover: 'Discover', library: 'Library', account: 'Profile', cards: 'Cards', loading: 'Loading', navigation: 'Main navigation',
+    placeholder: 'Find anime', search: 'Results', discover: 'Discover', library: 'Library', account: 'Profile', cards: 'Cards', loading: 'Loading', navigation: 'Main navigation',
     discoverTagline: 'Track anime and discover something new', libraryTagline: 'Your complete Shikimori library', cardsTagline: 'Create a card from any anime', profileTagline: 'Account and stats',
     recent: 'Recent', trending: 'Popular', noResults: 'Nothing found',
     searchError: 'Search is temporarily unavailable', retry: 'Retry', back: 'Back to search', clear: 'Clear search',
@@ -50,15 +51,15 @@
     share: 'Share card', download: 'Download JPEG', uploading: 'Uploading…',
     empty: 'Check the title or try another search.', posterError: 'Could not load poster.',
     shareError: 'Could not send the card. Please try again.', copied: 'Copied: ', inlineCopied: 'Card ID copied: ',
-    eps: 'ep.', ongoing: 'airing', anons: 'soon', exclusive: 'EXCLUSIVE', loadingPosters: 'Loading options…',
+    eps: 'ep.', loadingPosters: 'Loading options…',
     tenraiUnavailable: 'Some posters are currently unavailable.',
     myShikimori: 'My Shikimori', connectTitle: 'Connect Shikimori', connectText: 'Your list, progress, and friends’ ratings in one place.',
     connect: 'Connect Shikimori', configuredLater: 'Shikimori is unavailable.', refresh: 'Refresh', logout: 'Sign out',
-    watching: 'Watching', rewatching: 'Rewatching', planned: 'Planned', completed: 'Completed', onHold: 'On hold', dropped: 'Dropped', progress: 'Episodes', friends: 'Friends', friendScores: 'Friends', noFriendScores: 'No ratings',
-    watchAniliberty: 'Watch', episodeWatched: 'Mark episode', episodeUpdating: 'Saving…', episodeUpdateError: 'Could not update progress. Please try again.',
+    watching: 'Watching', rewatching: 'Rewatching', planned: 'Planned', completed: 'Completed', onHold: 'On hold', dropped: 'Dropped', progress: 'Episodes', friends: 'Friends', friendScores: 'Friends', watchAniliberty: 'Watch', episodeWatched: 'Mark episode', episodeUpdating: 'Saving…', episodeUpdateError: 'Could not update progress. Please try again.',
     dashboardError: 'Could not load your list. Please try again.', noWatching: 'There is nothing here yet.', connectHint: 'Connect Shikimori in Profile to manage your list.',
     totalTitles: 'Total', scoredTitles: 'Rated', watchedEpisodes: 'Episodes', openProfile: 'Open Shikimori', libraryScore: 'Your score',
-    details: 'About this anime', addPlanned: 'Plan to watch', addWatching: 'Watching', changeStatus: 'Status', removeFromList: 'Remove from list', save: 'Save', saving: 'Saving…', rateScore: 'My rating', noScore: 'No score', studios: 'Studio', runtime: 'min. per episode', adult: 'Age rating', editCard: 'Make a card', rateUpdateError: 'Could not save changes. Please try again.',
+    addPlanned: 'Plan to watch', addWatching: 'Watching', changeStatus: 'Status', removeFromList: 'Remove from list', save: 'Save', saving: 'Saving…', rateScore: 'My rating', noScore: 'No score', studios: 'Studio', runtime: 'min. per episode', adult: 'Age rating', editCard: 'Make a card', rateUpdateError: 'Could not save changes. Please try again.',
+    statuses: { released: 'released', latest: 'released' },
     presets: { classic: 'Classic', aurora: 'Aurora', glass: 'Glass', neon: 'Neon', vhs: 'VHS', manga: 'Manga', mag: 'Magazine', polaroid: 'Polaroid', print: 'Print' },
   };
   document.documentElement.lang = RU ? 'ru' : 'en';
@@ -88,45 +89,35 @@
   };
   const HISTORY_KEY = 'shiki:recent';
   const SRC_BADGE = { shikimori: 'SHIKI', anilist: 'AL', tenrai: 'TENRAI' };
-  const STATUS = { ongoing: T.ongoing, anons: T.anons };
+  function statusLabel(status) { return status ? T.statuses[status] || null : null; }
+  function ratingLabel(rating) { return rating ? String(rating).replace(/_/g, '-').toUpperCase() : null; }
   const { createElement: h, Fragment } = window.preact;
-  const { useCallback, useEffect, useMemo, useRef, useState } = window.preactHooks;
+  const { useCallback, useEffect, useRef, useState } = window.preactHooks;
 
   // These small primitives replace the project-local design-system bundle.
   // Their look is defined by Shikizilla's tokens, not by a second CSS cascade.
   function Button({ children, className = '', variant = 'primary', size, loading, disabled, ...props }) {
     return h('button', { ...props, disabled: disabled || loading, className: `gz-button gz-button--${variant}${size ? ` gz-button--${size}` : ''}${className ? ` ${className}` : ''}` }, loading ? h('span', { className: 'gz-button-spinner', 'aria-hidden': true }) : children);
   }
-  function Card({ children, className = '', hoverable, variant = 'elevated' }) {
+  // variant maps onto the design system's two surfaces: dark tile or cream paper.
+  function Card({ children, className = '', hoverable, variant = 'tile' }) {
     return h('div', { className: `gz-card gz-card--${variant}${hoverable ? ' gz-card--hoverable' : ''}${className ? ` ${className}` : ''}` }, children);
   }
   function Heading({ as = 'h2', children, className = '', ...props }) { return h(as, { ...props, className: `gz-heading ${className}`.trim() }, children); }
-  function Input({ className = '', inputSize, ...props }) { return h('input', { ...props, className: `gz-input${className ? ` ${className}` : ''}` }); }
+  function Input({ className = '', ...props }) { return h('input', { ...props, className: `gz-input${className ? ` ${className}` : ''}` }); }
   function Spinner() { return h('span', { className: 'gz-spinner', role: 'status', 'aria-label': T.loading }); }
   function Alert({ children, className = '', variant = 'info' }) { return h('div', { className: `gz-alert gz-alert--${variant}${className ? ` ${className}` : ''}`, role: 'alert' }, children); }
   function Switch({ label, checked, onCheckedChange }) {
     return h('div', { className: 'gz-switch' }, [h('span', { key: 'label' }, label), h('button', { key: 'control', type: 'button', role: 'switch', 'aria-label': label, 'aria-checked': checked, onClick: () => onCheckedChange(!checked) }, h('span', null))]);
   }
 
-  document.body.classList.toggle('mode-telegram', inTelegram);
-  document.body.classList.toggle('mode-browser', !inTelegram);
-
-  function syncSystemTheme(event = systemTheme) {
-    const dark = event.matches;
-    const background = dark ? '#111a12' : '#f6f5ef';
-    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-    if (inTelegram) {
-      try {
-        tg?.setHeaderColor?.(background);
-        tg?.setBackgroundColor?.(background);
-        tg?.setBottomBarColor?.(background);
-      } catch (_) { /* Older Telegram clients may reject custom colors. */ }
-    }
+  if (inTelegram) {
+    try {
+      tg?.setHeaderColor?.(BRAND_BACKGROUND);
+      tg?.setBackgroundColor?.(BRAND_BACKGROUND);
+      tg?.setBottomBarColor?.(BRAND_BACKGROUND);
+    } catch (_) { /* Older Telegram clients may reject custom colors. */ }
   }
-
-  syncSystemTheme();
-  if (systemTheme.addEventListener) systemTheme.addEventListener('change', syncSystemTheme);
-  else systemTheme.addListener?.(syncSystemTheme);
 
   if (inTelegram) {
     tg?.ready();
@@ -135,7 +126,7 @@
   }
 
   function proxyUrl(url) { return `/api/image?url=${encodeURIComponent(url)}`; }
-  function useFallbackPoster(event, fallbackUrl) {
+  function fallbackPoster(event, fallbackUrl) {
     const image = event.currentTarget;
     if (fallbackUrl && image.dataset.fallbackUsed !== 'true') {
       image.dataset.fallbackUsed = 'true'; image.src = proxyUrl(fallbackUrl); return;
@@ -291,17 +282,23 @@
     context.textBaseline = 'alphabetic';
   }
 
+  const brandFonts = Promise.all([
+    document.fonts?.load?.('700 50px Lora'),
+    document.fonts?.load?.('600 24px Manrope'),
+  ].filter(Boolean)).catch(() => undefined);
+
   async function renderCard(canvas, anime, poster, preset, titleLanguage, options) {
+    await brandFonts;
     return legacyRenderCard(canvas, anime, poster, preset, titleLanguage, options);
   }
 
   function SearchResult({ anime, onPick }) {
     const title = anime.title || anime.name;
-    const status = STATUS[anime.status];
+    const status = statusLabel(anime.status);
     return h('button', { className: 'anime-result', type: 'button', onClick: () => onPick(anime) },
-      h(Card, { hoverable: true, variant: 'outlined' },
+      h(Card, { hoverable: true },
         h('div', { className: 'result-content' },
-          h('img', { className: 'result-poster', src: proxyUrl(anime.image_preview || anime.image_url), alt: title }),
+          h('img', { className: 'result-poster', src: proxyUrl(anime.image_preview || anime.image_url), onError: (event) => fallbackPoster(event, anime.image_url), alt: title, loading: 'lazy' }),
           h('div', { className: 'result-copy' },
             h('p', { className: 'result-title' }, title),
             anime.name !== title && h('p', { className: 'result-subtitle' }, anime.name),
@@ -317,7 +314,7 @@
     const [query, setQuery] = useState(() => new URLSearchParams(window.location.search).get('q') || '');
     const [results, setResults] = useState([]); const [trending, setTrending] = useState(null);
     const [loading, setLoading] = useState(false); const [error, setError] = useState('');
-    const history = useMemo(readHistory, []);
+    const [history, setHistory] = useState(readHistory);
     useEffect(() => {
       let active = true;
       apiFetch('/api/trending').then((response) => response.ok ? response.json() : []).then((items) => { if (active) setTrending((items || []).filter((item) => item.image_url)); }).catch(() => { if (active) setTrending([]); });
@@ -339,13 +336,13 @@
       }, 350);
       return () => { controller.abort(); window.clearTimeout(timer); };
     }, [query]);
-    const pick = useCallback((anime) => { storeHistory(query.trim()); onPick(anime); }, [query, onPick]);
+    const pick = useCallback((anime) => { storeHistory(query.trim()); setHistory(readHistory()); onPick(anime); }, [query, onPick]);
     const activeItems = query.trim().length >= 2 ? results : trending || [];
-    return h('main', { className: 'app-shell' },
-      h('header', { className: 'app-header' }, h('div', { className: 'brand-mark', 'aria-hidden': true }, h('img', { src: logoUrl, alt: '' })), h('div', { className: 'header-copy' }, h(Heading, { as: 'h1', size: 'lg' }, cardMode ? T.cards : T.discover), h('p', null, cardMode ? T.cardsTagline : T.discoverTagline))),
-      h(Card, { className: 'search-panel', variant: 'elevated', padding: 'md' }, h('div', { className: `search-field${query ? ' has-clear' : ''}` }, h('span', { key: 'icon', className: 'search-icon', 'aria-hidden': true }, icon('search')), h(Input, { key: 'input', type: 'search', enterKeyHint: 'search', autoComplete: 'off', inputSize: 'lg', placeholder: T.placeholder, value: query, onChange: (event) => setQuery(event.target.value), 'aria-label': T.placeholder }), query && h(Button, { key: 'clear', className: 'clear-search', variant: 'ghost', size: 'sm', type: 'button', onClick: () => setQuery(''), 'aria-label': T.clear }, icon('close')))),
+    return h('main', { className: 'app-shell app-shell--nav' },
+      h('header', { className: 'app-header' }, h('div', { className: 'brand-mark', 'aria-hidden': true }, h('img', { src: logoUrl, alt: '' })), h('div', { className: 'header-copy' }, h(Heading, { as: 'h1' }, cardMode ? T.cards : T.discover), h('p', null, cardMode ? T.cardsTagline : T.discoverTagline))),
+      h('div', { className: 'search-panel' }, h('div', { className: 'search-field' }, h('span', { key: 'icon', className: 'search-icon', 'aria-hidden': true }, icon('search')), h(Input, { key: 'input', type: 'search', enterKeyHint: 'search', autoComplete: 'off', placeholder: T.placeholder, value: query, onChange: (event) => setQuery(event.target.value), 'aria-label': T.placeholder }), query && h(Button, { key: 'clear', className: 'clear-search', variant: 'ghost', size: 'sm', type: 'button', onClick: () => setQuery(''), 'aria-label': T.clear }, icon('close')))),
       !query && history.length ? h('section', null, h('h2', { className: 'section-title' }, T.recent), h('div', { className: 'history' }, history.map((item) => h(Button, { key: item, variant: 'outline', size: 'sm', type: 'button', onClick: () => setQuery(item) }, item)))) : null,
-      h('section', null, h('h2', { className: 'section-title' }, query ? T.search : T.trending), loading || (!query && trending === null) ? h('div', { className: 'loading-row' }, h(Spinner, null)) : error ? h(Alert, { variant: 'danger' }, error) : query && !activeItems.length ? h('div', { className: 'empty-state' }, h(Heading, { as: 'h3', size: 'sm' }, T.noResults), h('p', null, T.empty)) : h('div', { className: 'result-list' }, activeItems.map((anime) => h(SearchResult, { key: `${anime.source}-${anime.id}`, anime, onPick: pick })))),
+      h('section', null, h('h2', { className: 'section-title' }, query ? T.search : T.trending), loading || (!query && trending === null) ? h('div', { className: 'loading-row' }, h(Spinner, null)) : error ? h(Alert, { variant: 'danger' }, error) : query && !activeItems.length ? h('div', { className: 'empty-state' }, h(Heading, { as: 'h3' }, T.noResults), h('p', null, T.empty)) : h('div', { className: 'result-list' }, activeItems.map((anime) => h(SearchResult, { key: `${anime.source}-${anime.id}`, anime, onPick: pick })))),
     );
   }
 
@@ -385,8 +382,8 @@
   function DashboardFallback({ dashboard, loading, error, connecting, load, connect }) {
     if (loading) return h('div', { className: 'loading-row' }, h(Spinner, null));
     if (error) return h(Alert, { variant: 'danger' }, [h('p', { key: 'copy' }, error), h(Button, { key: 'retry', type: 'button', size: 'sm', variant: 'outline', onClick: () => load(true) }, T.retry)]);
-    if (!dashboard?.available) return h(Card, { className: 'connect-card', variant: 'elevated' }, [h(Heading, { as: 'h2', size: 'md', key: 'title' }, T.myShikimori), h('p', { key: 'copy' }, T.configuredLater)]);
-    if (!dashboard.connected) return h(Card, { className: 'connect-card', variant: 'elevated' }, [h('span', { className: 'connect-symbol', key: 'symbol', 'aria-hidden': true }, icon('account')), h(Heading, { as: 'h2', size: 'md', key: 'title' }, T.connectTitle), h('p', { key: 'copy' }, T.connectText), h(Button, { className: 'primary-action', key: 'button', type: 'button', size: 'lg', loading: connecting, onClick: connect }, T.connect)]);
+    if (!dashboard?.available) return h(Card, { className: 'connect-card', variant: 'paper' }, [h(Heading, { as: 'h2', key: 'title' }, T.myShikimori), h('p', { key: 'copy' }, T.configuredLater)]);
+    if (!dashboard.connected) return h(Card, { className: 'connect-card', variant: 'paper' }, [h('span', { className: 'connect-symbol', key: 'symbol', 'aria-hidden': true }, icon('account')), h(Heading, { as: 'h2', key: 'title' }, T.connectTitle), h('p', { key: 'copy' }, T.connectText), h(Button, { key: 'button', type: 'button', size: 'lg', loading: connecting, onClick: connect }, T.connect)]);
     return null;
   }
 
@@ -408,10 +405,10 @@
     };
     const ready = !loading && !error && dashboard?.available && dashboard.connected;
     const items = dashboard?.library?.[status] || (status === 'watching' ? dashboard?.watching : []) || [];
-    return h('main', { className: 'app-shell library-shell' }, [
-      h('header', { className: 'app-header my-header', key: 'header' }, [
+    return h('main', { className: 'app-shell app-shell--nav' }, [
+      h('header', { className: 'app-header', key: 'header' }, [
         h('div', { className: 'brand-mark', key: 'mark', 'aria-hidden': true }, h('img', { src: logoUrl, alt: '' })),
-        h('div', { className: 'header-copy', key: 'copy' }, [h(Heading, { as: 'h1', size: 'lg', key: 'title' }, T.library), h('p', { key: 'tagline' }, T.libraryTagline)]),
+        h('div', { className: 'header-copy', key: 'copy' }, [h(Heading, { as: 'h1', key: 'title' }, T.library), h('p', { key: 'tagline' }, T.libraryTagline)]),
       ]),
       ready ? h('section', { className: 'dashboard-content', key: 'dashboard' }, [
         h('div', { className: 'status-tabs', role: 'tablist', 'aria-label': T.library, key: 'tabs' }, statuses.map(([id, label]) => h('button', { key: id, type: 'button', role: 'tab', 'aria-selected': status === id, className: status === id ? 'is-active' : '', onClick: () => setStatus(id) }, [h('span', { key: 'label' }, label), h('b', { key: 'count' }, dashboard.counts?.[id] || 0)]))),
@@ -419,19 +416,19 @@
           const total = Number(anime.episodes || 0); const progress = Number(anime.progress || 0); const percent = total ? Math.min(100, Math.round(progress / total * 100)) : 0;
           const atLastEpisode = Boolean(total && progress >= total);
           const updating = updatingRateId === anime.rate_id;
-          return h('article', { className: 'watch-item', key: anime.id }, h(Card, { variant: 'outlined' }, [
+          return h('article', { className: 'watch-item', key: anime.id }, h(Card, null, [
             h('button', { className: 'watch-open', type: 'button', onClick: () => onPick({ ...anime, image_url: anime.image_fallback_url || anime.image_url, image_preview: anime.image_fallback_url || anime.image_preview }), key: 'details', 'aria-label': anime.title || anime.name }, h('div', { className: 'watch-content' }, [
-              h('img', { className: 'result-poster', src: proxyUrl(anime.image_preview || anime.image_url), onError: (event) => useFallbackPoster(event, anime.image_fallback_url), alt: anime.title || anime.name, key: 'poster' }),
+              h('img', { className: 'result-poster', src: proxyUrl(anime.image_preview || anime.image_url), onError: (event) => fallbackPoster(event, anime.image_fallback_url), alt: anime.title || anime.name, key: 'poster' }),
               h('div', { className: 'watch-copy', key: 'copy' }, [
                 h('p', { className: 'result-title', key: 'title' }, anime.title || anime.name),
                 h('p', { className: 'watch-progress', key: 'progress', 'aria-live': 'polite' }, [`${T.progress}: ${progress}${total ? ` / ${total}` : ''}`, anime.user_score ? ` · ${T.libraryScore}: ${anime.user_score}` : '']),
-                total ? h('div', { className: 'progress-track', key: 'track', 'aria-label': `${T.progress}: ${percent}%` }, h('span', { style: { width: `${percent}%` } })) : null,
+                total ? h('div', { className: 'progress-track', key: 'track', role: 'progressbar', 'aria-valuemin': 0, 'aria-valuemax': total, 'aria-valuenow': progress, 'aria-label': T.progress }, h('span', { style: { width: `${percent}%` } })) : null,
                 anime.friends?.length ? h('div', { className: 'rating-block', key: 'ratings' }, [h('span', { className: 'rating-label', key: 'label' }, T.friendScores), h('div', { className: 'friend-ratings', key: 'friends' }, anime.friends.map((friend) => h('span', { className: 'friend-rating', key: friend.id, title: `${friend.nickname}: ${friend.score}` }, friend.avatar ? h('img', { src: proxyUrl(friend.avatar), alt: '' }) : null, h('span', null, friend.nickname), h('b', null, friend.score))))]) : null,
               ]),
             ])),
             status === 'watching' || status === 'rewatching' ? h('div', { className: 'watch-actions', key: 'actions' }, [
-              anime.aniliberty_url ? h('a', { className: 'watch-action aniliberty-link', href: anime.aniliberty_url, target: '_blank', rel: 'noopener noreferrer', onClick: (event) => openExternal(event, anime.aniliberty_url), key: 'aniliberty' }, icon('play'), h('span', null, T.watchAniliberty)) : null,
-              h('button', { className: 'watch-action episode-action', type: 'button', disabled: !anime.rate_id || atLastEpisode || updating, onClick: () => incrementEpisode(anime), key: 'episode' }, icon('check'), h('span', null, updating ? T.episodeUpdating : T.episodeWatched)),
+              anime.aniliberty_url ? h('a', { className: 'watch-action', href: anime.aniliberty_url, target: '_blank', rel: 'noopener noreferrer', onClick: (event) => openExternal(event, anime.aniliberty_url), key: 'aniliberty' }, icon('play'), h('span', null, T.watchAniliberty)) : null,
+              h('button', { className: 'watch-action', type: 'button', disabled: !anime.rate_id || atLastEpisode || updating, onClick: () => incrementEpisode(anime), key: 'episode' }, icon('check'), h('span', null, updating ? T.episodeUpdating : T.episodeWatched)),
             ]) : null,
           ]));
         })) : h('div', { className: 'empty-state', key: 'empty' }, h('p', null, T.noWatching)),
@@ -444,7 +441,7 @@
     const ready = !loading && !error && dashboard?.available && dashboard.connected;
     const profile = dashboard?.profile; const counts = dashboard?.counts || {}; const summary = dashboard?.summary || {};
     const stats = [[T.totalTitles, summary.total || 0], [T.watching, (counts.watching || 0) + (counts.rewatching || 0)], [T.completed, counts.completed || 0], [T.watchedEpisodes, summary.episodes || 0], [T.scoredTitles, summary.scored || 0], [T.friends, dashboard?.friends_count || 0]];
-    return h('main', { className: 'app-shell profile-shell' }, [
+    return h('main', { className: 'app-shell app-shell--nav' }, [
       h('header', { className: 'app-header', key: 'header' }, [h('div', { className: 'brand-mark', key: 'mark', 'aria-hidden': true }, h('img', { src: logoUrl, alt: '' })), h('div', { className: 'header-copy', key: 'copy' }, [h(Heading, { as: 'h1', key: 'title' }, T.account), h('p', { key: 'tagline' }, T.profileTagline)])]),
       ready ? h('section', { className: 'profile-content', key: 'content' }, [
         h(Card, { className: 'profile-card', key: 'profile' }, [profile?.avatar ? h('img', { className: 'profile-avatar profile-avatar--lg', src: proxyUrl(profile.avatar), alt: profile.nickname, key: 'avatar' }) : h('span', { className: 'profile-placeholder profile-avatar--lg', 'aria-hidden': true, key: 'avatar' }, icon('account')), h('div', { className: 'profile-card-copy', key: 'copy' }, [h('strong', { key: 'name' }, profile?.nickname), h('span', { key: 'service' }, 'Shikimori')]), h(Button, { className: 'refresh-button', type: 'button', variant: 'ghost', onClick: () => load(true), 'aria-label': T.refresh, key: 'refresh' }, icon('refresh'))]),
@@ -483,28 +480,28 @@
     };
     const title = details?.title || anime.title || anime.name;
     const statuses = [['planned', T.addPlanned], ['watching', T.addWatching], ['rewatching', RU ? 'Пересматриваю' : 'Rewatching'], ['completed', RU ? 'Просмотрено' : 'Completed'], ['on_hold', RU ? 'Отложено' : 'On hold'], ['dropped', RU ? 'Брошено' : 'Dropped']];
-    return h('main', { className: 'app-shell anime-shell' }, [
+    return h('main', { className: 'app-shell' }, [
       h('header', { className: 'editor-header', key: 'header' }, [
         h(Button, { key: 'back', variant: 'ghost', type: 'button', onClick: onBack, 'aria-label': T.back }, icon('back')),
         h('div', { className: 'editor-title', key: 'title' }, h(Heading, { as: 'h1', key: 'heading' }, title)),
       ]),
       loading ? h('div', { className: 'loading-row', key: 'loading' }, h(Spinner, null)) : error ? h(Alert, { variant: 'danger', key: 'error' }, [h('p', { key: 'copy' }, error), h(Button, { key: 'retry', type: 'button', variant: 'outline', onClick: () => load(true) }, T.retry)]) : h('div', { className: 'anime-detail-layout', key: 'content' }, [
         h(Card, { className: 'anime-hero', key: 'hero' }, [
-          h('img', { className: 'anime-detail-poster', src: proxyUrl(anime.image_preview || anime.image_url), onError: (event) => useFallbackPoster(event, anime.image_fallback_url), alt: title, key: 'poster' }),
-          h('div', { className: 'anime-hero-copy', key: 'copy' }, [h('h2', { key: 'name' }, title), anime.name !== title ? h('p', { key: 'original' }, anime.name) : null, h('p', { className: 'result-meta', key: 'meta' }, [details.score && `★ ${details.score}`, details.status, details.episodes && `${details.episodes} ${T.eps}`].filter(Boolean).join(' · '))]),
+          h('img', { className: 'anime-detail-poster', src: proxyUrl(anime.image_preview || anime.image_url), onError: (event) => fallbackPoster(event, anime.image_fallback_url), alt: title, key: 'poster' }),
+          h('div', { className: 'anime-hero-copy', key: 'copy' }, [h('h2', { key: 'name' }, title), anime.name !== title ? h('p', { key: 'original' }, anime.name) : null, h('p', { className: 'result-meta', key: 'meta' }, [details.score && `★ ${details.score}`, statusLabel(details.status), details.episodes && `${details.episodes} ${T.eps}`].filter(Boolean).join(' · '))]),
         ]),
         h('section', { className: 'anime-facts', key: 'facts' }, [
           details.genres?.length ? h('div', { key: 'genres' }, [h('h2', null, T.genres), h('p', null, details.genres.join(' · '))]) : null,
           details.studios?.length ? h('div', { key: 'studios' }, [h('h2', null, T.studios), h('p', null, details.studios.join(', '))]) : null,
           details.duration ? h('div', { key: 'duration' }, [h('h2', null, T.runtime), h('p', null, details.duration)]) : null,
-          details.rating ? h('div', { key: 'rating' }, [h('h2', null, T.adult), h('p', null, details.rating)]) : null,
+          details.rating ? h('div', { key: 'rating' }, [h('h2', null, T.adult), h('p', null, ratingLabel(details.rating))]) : null,
         ]),
         h(Card, { className: 'rate-editor', key: 'rate' }, !details.connected ? h('div', { className: 'rate-editor-empty' }, [h('p', { key: 'copy' }, T.connectHint)]) : rate ? [
           h('label', { key: 'status' }, [h('span', null, T.changeStatus), h('select', { value: rate.status || 'planned', onChange: (event) => setRate((current) => ({ ...current, status: event.target.value })) }, statuses.map(([value, label]) => h('option', { key: value, value }, label)))]),
           h('label', { key: 'score' }, [h('span', null, T.rateScore), h('select', { value: String(rate.score || 0), onChange: (event) => setRate((current) => ({ ...current, score: Number(event.target.value) })) }, Array.from({ length: 11 }, (_, score) => h('option', { key: score, value: score }, score ? score : T.noScore)))]),
           h('div', { className: 'rate-editor-actions', key: 'actions' }, [h(Button, { key: 'save', type: 'button', loading: saving, onClick: () => updateRate({ status: rate.status, score: rate.score }) }, saving ? T.saving : T.save), h(Button, { key: 'remove', type: 'button', variant: 'ghost', disabled: saving, onClick: () => updateRate({}, true) }, T.removeFromList)]),
         ] : h('div', { className: 'rate-editor-empty' }, [h('p', { key: 'copy' }, RU ? 'Добавьте тайтл в список, чтобы отмечать прогресс и оценку.' : 'Add this title to track your progress and rating.'), h(Button, { key: 'add', type: 'button', loading: saving, onClick: () => updateRate({ status: 'planned', score: 0 }) }, T.addPlanned)])),
-        h(Button, { className: 'primary-action detail-card-action', type: 'button', key: 'card', onClick: onEdit }, T.editCard),
+        h(Button, { className: 'detail-card-action', type: 'button', key: 'card', onClick: onEdit }, T.editCard),
       ]),
     ]);
   }
@@ -578,13 +575,13 @@
     }));
     return h('main', { className: 'app-shell editor-shell' }, [
       h('header', { className: 'editor-header', key: 'header' }, [
-        h(Button, { key: 'back', variant: 'ghost', size: 'md', type: 'button', onClick: onBack, 'aria-label': T.back }, icon('back')),
-        h('div', { className: 'editor-title', key: 'title' }, [h(Heading, { as: 'h1', size: 'md', key: 'heading' }, displayTitle), h('p', { key: 'meta' }, metaLine(anime))]),
+        h(Button, { key: 'back', variant: 'ghost', type: 'button', onClick: onBack, 'aria-label': T.back }, icon('back')),
+        h('div', { className: 'editor-title', key: 'title' }, [h(Heading, { as: 'h1', key: 'heading' }, displayTitle), h('p', { key: 'meta' }, metaLine(anime))]),
       ]),
       h('div', { className: 'editor-layout', key: 'layout' }, [
-        h(Card, { className: 'preview-card', variant: 'elevated', key: 'preview' }, h('canvas', { className: 'card-canvas', ref: canvasRef, width: 720, height: 1080 })),
+        h(Card, { className: 'preview-card', variant: 'paper', key: 'preview' }, h('canvas', { className: 'card-canvas', ref: canvasRef, width: 720, height: 1080 })),
         h('div', { className: 'editor-controls', key: 'controls' }, [
-          h('section', { className: 'editor-section style-section', key: 'style' }, [h('h2', { key: 'heading' }, T.style), h('div', { className: 'preset-carousel', key: 'choices' }, styleChoices)]),
+          h('section', { className: 'editor-section', key: 'style' }, [h('h2', { key: 'heading' }, T.style), h('div', { className: 'preset-carousel', key: 'choices' }, styleChoices)]),
           h('section', { className: 'editor-section', key: 'poster' }, [
             h('div', { className: 'section-heading', key: 'heading' }, [h('h2', { key: 'title' }, T.poster), postersLoading ? h('span', { className: 'poster-loading', role: 'status', key: 'loading' }, T.loadingPosters) : null]),
             tenraiUnavailable ? h(Alert, { className: 'poster-warning', variant: 'warning', key: 'warning' }, T.tenraiUnavailable) : null,
@@ -594,8 +591,8 @@
           h('section', { className: 'editor-section', key: 'elements' }, [h('h2', { key: 'heading' }, T.elements), h('div', { className: 'toggle-list', key: 'switches' }, switches)]),
         ]),
         h('div', { className: 'action-stack', key: 'actions' }, inTelegram
-          ? h(Button, { className: 'primary-action', type: 'button', size: 'lg', loading: sending, onClick: share }, sending ? T.uploading : T.share)
-          : h(Button, { className: 'primary-action', type: 'button', size: 'lg', onClick: download }, T.download)),
+          ? h(Button, { type: 'button', size: 'lg', loading: sending, onClick: share }, sending ? T.uploading : T.share)
+          : h(Button, { type: 'button', size: 'lg', onClick: download }, T.download)),
       ]),
     ]);
   }
@@ -618,7 +615,7 @@
           'aria-current': active ? 'page' : undefined,
         }, [
           h('span', { className: 'bottom-nav-icon', key: 'icon', 'aria-hidden': true }, icon(iconName)),
-          h('span', { className: 'bottom-nav-label', key: 'label' }, label),
+          h('span', { key: 'label' }, label),
         ]);
       })),
     );
@@ -626,7 +623,13 @@
 
   function App() {
     const [stack, setStack] = useState([{ name: 'home' }]); const [toast, setToast] = useState('');
-    const notify = useCallback((message) => { setToast(message); window.setTimeout(() => setToast(''), 2800); }, []);
+    const toastTimer = useRef(0);
+    const notify = useCallback((message) => {
+      setToast(message);
+      window.clearTimeout(toastTimer.current);
+      toastTimer.current = window.setTimeout(() => setToast(''), 2800);
+    }, []);
+    useEffect(() => () => window.clearTimeout(toastTimer.current), []);
     const push = useCallback((screen) => setStack((current) => [...current, screen]), []);
     const pop = useCallback(() => setStack((current) => current.length > 1 ? current.slice(0, -1) : current), []);
     const current = stack[stack.length - 1];
@@ -646,9 +649,9 @@
     return h(Fragment, null, [
       screen,
       rootNames.includes(current.name) ? h(BottomNavigation, { view: current.name, fullClient: inTelegram || inlineLaunch, onChange: (name) => setStack([{ name }]), key: 'navigation' }) : null,
-      toast ? h('div', { className: `toast${current.name === 'editor' ? ' toast--editor' : ''}`, role: 'status', key: 'toast' }, toast) : null,
+      toast ? h('div', { className: 'toast', role: 'status', key: 'toast' }, toast) : null,
     ]);
   }
 
-  window.preact.render(h(App), document.getElementById('ds-root'));
+  window.preact.render(h(App), document.getElementById('app-root'));
 })();

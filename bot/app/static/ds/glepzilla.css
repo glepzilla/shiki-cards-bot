@@ -1,0 +1,86 @@
+/* glepzilla design system — vendored tokens.
+   Source: glepzilla-homepage/kit/glepzilla-design-system/tokens/{colors,typography,spacing}.css
+   Keep this file a verbatim copy of the upstream tokens. Product-specific values
+   belong in webapp.css, never here. */
+
+:root {
+  /* forest — dark surfaces */
+  --gz-forest-950: #0f1709;
+  --gz-forest-900: #141f0e; /* page background */
+  --gz-forest-800: #1f2f15; /* tile */
+  --gz-forest-700: #2b3d24; /* raised tile */
+  /* moss — green accents */
+  --gz-moss-900: #23361a;
+  --gz-moss-700: #3f5330;
+  --gz-moss-600: #5a7a3c;
+  --gz-moss-400: #8faf6a;
+  /* paper — cream "paper" */
+  --gz-paper-50: #f6f2e7;
+  --gz-paper-100: #f2ecd9;
+  --gz-paper-300: #e2dbc4;
+  /* sage — muted text on dark */
+  --gz-sage-200: #dfe7cf;
+  --gz-sage-300: #b9c4a8;
+  --gz-sage-500: #8a9478;
+  /* ink — text on paper */
+  --gz-ink-900: #22301a;
+  --gz-ink-700: #3a4a2f;
+  --gz-ink-500: #5a6a4d;
+  /* accent — reserved for the sticker, never a second brand colour */
+  --gz-amber-400: #e8b93c;
+
+  /* semantic aliases */
+  --gz-bg: var(--gz-forest-900);
+  --gz-surface-paper: var(--gz-paper-50);
+  --gz-surface-tile: var(--gz-forest-800);
+  --gz-surface-tile-raised: var(--gz-forest-700);
+  --gz-border-paper: var(--gz-paper-300);
+  --gz-border-tile: rgba(242, 236, 217, .16);
+  --gz-text-on-dark: var(--gz-paper-100);
+  --gz-text-muted-on-dark: var(--gz-sage-300);
+  --gz-text-faint: var(--gz-sage-500);
+  --gz-text-on-paper: var(--gz-ink-900);
+  --gz-text-body-on-paper: var(--gz-ink-700);
+  --gz-accent: var(--gz-amber-400);
+  --gz-link-on-paper: var(--gz-moss-700);
+  --gz-link-on-dark: var(--gz-sage-200);
+
+  --gz-font-display: 'Lora', Georgia, serif;              /* headings, titles */
+  --gz-font-sans: 'Manrope', system-ui, sans-serif;       /* body text, UI */
+  --gz-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace; /* labels, dates */
+
+  --gz-text-h1: 58px;
+  --gz-text-h2: 42px;
+  --gz-text-title: 23px;
+  --gz-text-body: 17px;
+  --gz-text-ui: 15px;
+  --gz-text-small: 14px;
+  --gz-text-meta: 12.5px;
+  --gz-eyebrow-tracking: .12em;
+  --gz-leading-body: 1.7;
+  --gz-leading-tight: 1.1;
+
+  --gz-space-1: 6px;
+  --gz-space-2: 10px;
+  --gz-space-3: 14px;
+  --gz-space-4: 18px;
+  --gz-space-5: 24px;
+  --gz-space-6: 32px;
+  --gz-space-7: 44px;
+  --gz-space-8: 56px;
+
+  --gz-radius-sm: 6px;     /* sticker */
+  --gz-radius-tile: 18px;  /* dark tile */
+  --gz-radius-card: 22px;  /* paper card */
+  --gz-radius-pill: 999px;
+
+  --gz-shadow-paper: 0 30px 70px -20px rgba(0, 0, 0, .55);
+  --gz-shadow-tile: 0 24px 55px -18px rgba(0, 0, 0, .5);
+  --gz-shadow-sticker: 0 6px 18px rgba(0, 0, 0, .35);
+
+  --gz-rot-a: -1.2deg;
+  --gz-rot-b: 1.6deg;
+  --gz-rot-c: -.8deg;
+  --gz-rot-d: .6deg;
+  --gz-rot-sticker: 6deg;
+}
